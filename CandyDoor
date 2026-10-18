@@ -1,0 +1,279 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+local ACCENT = Color3.fromRGB(255, 105, 180)
+local HEADER_BG = Color3.fromRGB(40, 15, 25)
+local STROKE = Color3.fromRGB(180, 50, 100)
+local FOUND_COLOR = Color3.fromRGB(255, 182, 193)
+local FOUND_BG = Color3.fromRGB(60, 20, 40)
+
+local autoHopEnabled = false
+local currentGui = nil
+local statusLabel = nil
+local buttonRef = nil
+local btnStrokeRef = nil
+
+local function setStatus(text, color)
+    if not statusLabel then return end
+    statusLabel.Text = text
+    statusLabel.TextColor3 = color or Color3.fromRGB(150, 150, 155)
+end
+
+local function updateGuiStatus()
+    if not currentGui then return end
+    local b = currentGui:FindFirstChild("FinderButton", true)
+    if not b then return end
+    
+    if not autoHopEnabled then
+        b.Text, b.TextColor3, b.BackgroundColor3 = "Collect", Color3.fromRGB(180, 90, 120), Color3.fromRGB(32, 16, 24)
+        if btnStrokeRef then btnStrokeRef.Color = STROKE end
+    else
+        b.Text, b.TextColor3, b.BackgroundColor3 = "Collecting...", FOUND_COLOR, FOUND_BG
+        if btnStrokeRef then btnStrokeRef.Color = FOUND_COLOR end
+    end
+end
+
+local function makeDraggable(frame, handle)
+    local dragging, dragStart, startPos = false, nil, nil
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+    handle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            local d = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+        end
+    end)
+end
+
+local function createGui()
+    if currentGui then currentGui:Destroy() end
+    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not pg then pg = LocalPlayer:WaitForChild("PlayerGui", 10) end
+    if not pg then return end
+    
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "AutoDoorCandyUI"
+    sg.ResetOnSpawn = false
+    sg.IgnoreGuiInset = true
+    sg.DisplayOrder = 999
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.Parent = pg
+    
+    local shadow = Instance.new("Frame")
+    shadow.Size = UDim2.new(0, 190, 0, 92)
+    shadow.Position = UDim2.new(0, 8, 0.5, -42) 
+    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    shadow.BackgroundTransparency = 0.8
+    shadow.BorderSizePixel = 0
+    shadow.ZIndex = 0
+    shadow.Parent = sg
+    
+    local sc = Instance.new("UICorner")
+    sc.CornerRadius = UDim.new(0, 8)
+    sc.Parent = shadow
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 190, 0, 92)
+    mainFrame.Position = UDim2.new(0, 10, 0.5, -46) 
+    mainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.ZIndex = 1
+    mainFrame.Parent = sg
+    currentGui = sg
+    
+    local mc = Instance.new("UICorner")
+    mc.CornerRadius = UDim.new(0, 8)
+    mc.Parent = mainFrame
+    
+    local ms = Instance.new("UIStroke")
+    ms.Name = "MainStroke"
+    ms.Thickness = 1
+    ms.Color = STROKE
+    ms.Transparency = 0.4
+    ms.Parent = mainFrame
+    
+    local gradient = Instance.new("UIGradient")
+    gradient.Rotation = 90
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 24)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 12)),
+    })
+    gradient.Parent = mainFrame
+    
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.Size = UDim2.new(1, 0, 0, 28)
+    header.BackgroundColor3 = HEADER_BG
+    header.BackgroundTransparency = 0.1
+    header.BorderSizePixel = 0
+    header.ZIndex = 2
+    header.Parent = mainFrame
+    
+    local hc = Instance.new("UICorner")
+    hc.CornerRadius = UDim.new(0, 8)
+    hc.Parent = header
+    
+    local hf = Instance.new("Frame")
+    hf.Name = "HeaderFix"
+    hf.Size = UDim2.new(1, 0, 0.5, 0)
+    hf.Position = UDim2.new(0, 0, 0.5, 0)
+    hf.BackgroundColor3 = HEADER_BG
+    hf.BackgroundTransparency = 0.1
+    hf.BorderSizePixel = 0
+    hf.ZIndex = 1
+    hf.Parent = header
+    
+    local headerGradient = Instance.new("UIGradient")
+    headerGradient.Rotation = 90
+    headerGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 180)),
+    })
+    headerGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.88),
+        NumberSequenceKeypoint.new(1, 0.96),
+    })
+    headerGradient.Parent = header
+    
+    local accentBar = Instance.new("Frame")
+    accentBar.Name = "AccentBar"
+    accentBar.Size = UDim2.new(0, 3, 0, 16)
+    accentBar.Position = UDim2.new(0, 10, 0.5, -8)
+    accentBar.BackgroundColor3 = ACCENT
+    accentBar.BorderSizePixel = 0
+    accentBar.ZIndex = 3
+    accentBar.Parent = header
+    
+    local abc = Instance.new("UICorner")
+    abc.CornerRadius = UDim.new(1, 0)
+    abc.Parent = accentBar
+    
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -26, 1, 0)
+    title.Position = UDim2.new(0, 20, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "AUTO DOOR CANDY"
+    title.TextColor3 = ACCENT
+    title.TextSize = 11
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 3
+    title.Parent = header
+    
+    local button = Instance.new("TextButton")
+    button.Name = "FinderButton"
+    button.Size = UDim2.new(1, -20, 0, 28)
+    button.Position = UDim2.new(0, 10, 0, 36)
+    button.BackgroundColor3 = Color3.fromRGB(32, 16, 24)
+    button.TextColor3 = Color3.fromRGB(180, 90, 120)
+    button.Text = "Collect"
+    button.TextSize = 10
+    button.Font = Enum.Font.GothamBold
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    button.ZIndex = 2
+    button.Parent = mainFrame
+    buttonRef = button
+    
+    local bc = Instance.new("UICorner")
+    bc.CornerRadius = UDim.new(0, 5)
+    bc.Parent = button
+    
+    local bs = Instance.new("UIStroke")
+    bs.Thickness = 1
+    bs.Color = STROKE
+    bs.Transparency = 0.5
+    bs.Parent = button
+    btnStrokeRef = bs
+    
+    local sf = Instance.new("Frame")
+    sf.Name = "StatusFrame"
+    sf.Size = UDim2.new(1, -20, 0, 14)
+    sf.Position = UDim2.new(0, 10, 0, 72)
+    sf.BackgroundColor3 = Color3.fromRGB(6, 6, 8)
+    sf.BorderSizePixel = 0
+    sf.ZIndex = 2
+    sf.Parent = mainFrame
+    
+    local sfc = Instance.new("UICorner")
+    sfc.CornerRadius = UDim.new(0, 3)
+    sfc.Parent = sf
+    
+    statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(1, -8, 1, 0)
+    statusLabel.Position = UDim2.new(0, 4, 0, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Aguardando..."
+    statusLabel.TextColor3 = Color3.fromRGB(120, 120, 125)
+    statusLabel.TextSize = 8
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    statusLabel.ZIndex = 3
+    statusLabel.Parent = sf
+    
+    makeDraggable(mainFrame, header)
+    updateGuiStatus()
+end
+
+local tpThread = nil
+
+createGui()
+
+buttonRef.MouseButton1Click:Connect(function()
+    autoHopEnabled = not autoHopEnabled
+    updateGuiStatus()
+    
+    if autoHopEnabled then
+        setStatus("Coletando...", FOUND_COLOR)
+        
+        tpThread = task.spawn(function()
+            while autoHopEnabled do
+                local HalloweenFolder = Workspace:FindFirstChild("Halloween")
+                local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                local humanoid = character:FindFirstChild("Humanoid")
+
+                if HalloweenFolder and hrp and humanoid and humanoid.Health > 0 then
+                    local casas = HalloweenFolder:GetChildren()
+                    
+                    for _, casa in ipairs(casas) do
+                        if not autoHopEnabled then break end
+                        
+                        if string.find(casa.Name, "HouseForTrickOrTreating") then
+                            local door = casa:FindFirstChild("DoorOpener")
+                            if door then
+                                pcall(function()
+                                    hrp.CFrame = door:GetPivot()
+                                    hrp.AssemblyLinearVelocity = Vector3.zero
+                                    hrp.AssemblyAngularVelocity = Vector3.zero
+                                end)
+                                task.wait(0.2)
+                            end
+                        end
+                    end
+                else
+                    task.wait(0.5)
+                end
+            end
+        end)
+    else
+        setStatus("Parado", Color3.fromRGB(180, 90, 120))
+    end
+end)
