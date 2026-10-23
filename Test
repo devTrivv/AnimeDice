@@ -1,7 +1,3 @@
---=============================================================
--- AUTO HALLOWEEN + AUTO EQUIP + AUTO LOCK + HAUNTED NIGHT E POTION + AUTO TOWER
---=============================================================
-
 local whitelist = {
     [5545095845] = true, [2638574247] = true, [11719929777] = true,
     [10795692261] = true, [4808506152] = true, [9080159328] = true,
@@ -17,8 +13,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 
 if not whitelist[LocalPlayer.UserId] then
-    warn("[WHITELIST] Acesso NEGADO para " .. tostring(LocalPlayer.Name))
-    pcall(function() LocalPlayer:Kick("Você não está na whitelist deste script.") end)
+    pcall(function() LocalPlayer:Kick("Acesso negado.") end)
     return
 end
 
@@ -26,45 +21,40 @@ if coreGui:FindFirstChild("AutoHalloweenUI") then
     coreGui.AutoHalloweenUI:Destroy()
 end
 
--- ==========================================
--- ANTI-AFK + ANTI GAME PAUSED
--- ==========================================
 LocalPlayer.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new(0, 0))
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(10)
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new(0, 0))
-        end)
-    end
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(0, 0))
+    end)
 end)
 
 pcall(function()
     game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
 end)
 
--- ==========================================
--- AUTO TELEPORT PARA ISLAND (AO EXECUTAR)
--- ==========================================
+local function AutoRejoin()
+    local PlaceId = game.PlaceId
+    local JobId = game.JobId
+    local queueFunc = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+    if queueFunc then
+        local rejoinScript = string.format('game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game.Players.LocalPlayer)', PlaceId, JobId)
+        pcall(function() queueFunc(rejoinScript) end)
+    end
+end
+AutoRejoin()
+
+local tpIslandTime = 0
 task.spawn(function()
     task.wait(1)
     pcall(function()
         local Event = ReplicatedStorage:WaitForChild("Network"):WaitForChild("HalloweenService"):WaitForChild("RF"):WaitForChild("Teleport", 5)
         if Event then
             Event:InvokeServer("Island")
-            print("[CÉREBRO] Teleportado para Island.")
+            tpIslandTime = tick()
         end
     end)
 end)
 
--- ==========================================
--- SISTEMA DE HOOK
--- ==========================================
 local isAutoRotateTowerRunning = false
 local torreFinalizada = false
 local ultimoFloor = 0
@@ -74,51 +64,41 @@ local cancelTowerRF, completeTowerRF
 pcall(function()
     completeTowerRF = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Towers"):WaitForChild("RF"):WaitForChild("CompleteTowerFloor")
     cancelTowerRF = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Towers"):WaitForChild("RF"):WaitForChild("CancelTower")
-
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        if method == "InvokeServer" then
-            if self == completeTowerRF then
-                local args = {...}
-                local result = oldNamecall(self, table.unpack(args))
-                if result then
-                    local texto = tostring(result)
-                    if string.find(texto, "destroyed") or string.find(texto, "ended") or string.find(texto, "memberDefeated") then
-                        torreFinalizada = true
-                    elseif type(result) == "table" and type(result[1]) == "table" then
-                        for _, evento in ipairs(result[1]) do
-                            if type(evento) == "table" and evento.action == "floorCompleted" then
-                                if (evento.floor or 0) > ultimoFloor then
-                                    ultimoFloor = evento.floor
-                                    achouAndar = true
-                                end
+        if getnamecallmethod() == "InvokeServer" and self == completeTowerRF then
+            local result = oldNamecall(self, ...)
+            if result then
+                local texto = tostring(result)
+                if string.find(texto, "destroyed") or string.find(texto, "ended") or string.find(texto, "memberDefeated") then
+                    torreFinalizada = true
+                elseif type(result) == "table" and type(result[1]) == "table" then
+                    for _, evento in ipairs(result[1]) do
+                        if type(evento) == "table" and evento.action == "floorCompleted" then
+                            if (evento.floor or 0) > ultimoFloor then
+                                ultimoFloor = evento.floor
+                                achouAndar = true
                             end
                         end
                     end
                 end
-                return result
             end
+            return result
         end
         return oldNamecall(self, ...)
     end)
 end)
 
--- ==========================================
--- FUNÇÕES DE BUSCA E UTILITÁRIOS
--- ==========================================
 local isEquipRunning = false
 local MatrizSalva = nil
 
 local function EhValida(tab)
-    if type(tab) ~= "table" then return false end
-    if tab == _G or tab == shared or tab == game then return false end
+    if type(tab) ~= "table" or tab == _G or tab == shared or tab == game then return false end
     local ok, mt = pcall(getmetatable, tab)
     if ok and mt then
         if type(mt) == "string" then return false end
         if type(mt) == "table" then
-            local ok2, idx = pcall(rawget, mt, "__index")
-            if ok2 and idx then return false end
+            if pcall(rawget, mt, "__index") then return false end
             local ok3, s = pcall(tostring, mt)
             if ok3 and s and (s:match("Connection") or s:match("Signal")) then return false end
         end
@@ -127,11 +107,11 @@ local function EhValida(tab)
 end
 
 local function BuscarMatriz()
-    local matrizFinal = nil
+    local m = nil
     pcall(function()
         for _, obj in pairs(getgc(true)) do
             if EhValida(obj) then
-                local temNomeReal = false
+                local found = false
                 local count = 0
                 for k, v in pairs(obj) do
                     count = count + 1
@@ -140,64 +120,41 @@ local function BuscarMatriz()
                         local isUnit = false
                         local nameFound = ""
                         for k2, v2 in pairs(v) do
-                            if type(k2) == "string" and k2:lower() == "kind" and tostring(v2) == "Unit" then
-                                isUnit = true
-                            end
-                            if type(k2) == "string" and (k2:lower() == "name" or k2:lower() == "displayname") then
-                                nameFound = tostring(v2)
-                            end
+                            if type(k2) == "string" and k2:lower() == "kind" and tostring(v2) == "Unit" then isUnit = true end
+                            if type(k2) == "string" and (k2:lower() == "name" or k2:lower() == "displayname") then nameFound = tostring(v2) end
                         end
-                        if isUnit and nameFound ~= "" and nameFound ~= "Desconhecido" then
-                            temNomeReal = true
-                            break
-                        end
+                        if isUnit and nameFound ~= "" and nameFound ~= "Desconhecido" then found = true; break end
                     end
                 end
-                if temNomeReal then
-                    matrizFinal = obj
-                    return
-                end
+                if found then m = obj; return end
             end
         end
     end)
-    return matrizFinal
+    return m
 end
 
 local function LerQuirkDoBoneco(dadosBoneco)
     if type(dadosBoneco) ~= "table" then return nil end
-    local resultado = nil
-    pcall(function()
-        for k, v in pairs(dadosBoneco) do
-            if type(k) == "string" and k:lower():find("quirk") then
-                if type(v) == "string" and v ~= "" then resultado = v; return end
-                if type(v) == "table" then
-                    for k2, v2 in pairs(v) do
-                        if type(k2) == "string" and k2:lower() == "quirk" and type(v2) == "string" then
-                            resultado = v2; return
-                        end
-                    end
-                    if type(v.Name) == "string" then resultado = v.Name; return end
-                    if type(v.name) == "string" then resultado = v.name; return end
-                end
-            end
-        end
-    end)
-    if resultado then return resultado end
-    pcall(function()
-        for _, v in pairs(dadosBoneco) do
-            if type(v) == "table" and v ~= dadosBoneco then
-                for k2, v2 in pairs(v) do
-                    if type(k2) == "string" and k2:lower():find("quirk") then
-                        if type(v2) == "string" and v2 ~= "" then
-                            resultado = v2
-                            return
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    return resultado
+    local att = dadosBoneco.attributes or dadosBoneco.Attributes
+    if type(att) == "table" then
+        if type(att.quirk) == "string" then return att.quirk end
+    end
+    for k, v in pairs(dadosBoneco) do
+        if type(k) == "string" and k:lower() == "quirk" and type(v) == "string" then return v end
+    end
+    return nil
+end
+
+local function LerGradeDoBoneco(dadosBoneco)
+    local att = dadosBoneco.attributes or dadosBoneco.Attributes
+    if type(att) == "table" and type(att.grade) == "string" then return att.grade end
+    return "?"
+end
+
+local function LerTraitDoBoneco(dadosBoneco)
+    local att = dadosBoneco.attributes or dadosBoneco.Attributes
+    if type(att) == "table" and type(att.trait) == "string" then return att.trait end
+    return "Sem Trait"
 end
 
 local function AcharMinhaPlot()
@@ -211,11 +168,7 @@ local function AcharMinhaPlot()
             local billboard = label:FindFirstChild("BillboardGui")
             if billboard then
                 local playerNameLabel = billboard:FindFirstChild("PlayerName")
-                if playerNameLabel and playerNameLabel:IsA("TextLabel") then
-                    if playerNameLabel.Text == LocalPlayer.DisplayName or playerNameLabel.Text == LocalPlayer.Name then
-                        return plot
-                    end
-                end
+                if playerNameLabel and playerNameLabel:IsA("TextLabel") and (playerNameLabel.Text == LocalPlayer.DisplayName or playerNameLabel.Text == LocalPlayer.Name) then return plot end
             end
         end
         local owner = plot:FindFirstChild("Owner")
@@ -226,934 +179,238 @@ local function AcharMinhaPlot()
 end
 
 local function GetMaxSlots()
-    local minhaPlot = AcharMinhaPlot()
-    if not minhaPlot then return 18 end
-    local SlotsFolder = minhaPlot:FindFirstChild("Slots")
-    if not SlotsFolder then return 18 end
-    local maiorSlot = 0
-    for _, slotObj in pairs(SlotsFolder:GetChildren()) do
-        local num = tonumber(slotObj.Name)
-        if num and num > maiorSlot then maiorSlot = num end
-    end
-    return maiorSlot > 0 and maiorSlot or 18
+    local p = AcharMinhaPlot()
+    if not p then return 18 end
+    local s = p:FindFirstChild("Slots")
+    if not s then return 18 end
+    local m = 0
+    for _, o in pairs(s:GetChildren()) do local n = tonumber(o.Name); if n and n > m then m = n end end
+    return m > 0 and m or 18
 end
 
-local function SlotPreenchido(slotNumero)
-    local minhaPlot = AcharMinhaPlot()
-    if not minhaPlot then return false end
-    local SlotsFolder = minhaPlot:FindFirstChild("Slots")
-    if not SlotsFolder then return false end
-    local slotObj = SlotsFolder:FindFirstChild(tostring(slotNumero))
-    if slotObj and #slotObj:GetChildren() > 0 then return true end
+local function SlotPreenchido(n)
+    local p = AcharMinhaPlot()
+    if not p then return false end
+    local s = p:FindFirstChild("Slots")
+    if not s then return false end
+    local o = s:FindFirstChild(tostring(n))
+    return o and #o:GetChildren() > 0
+end
+
+local function UUIDNoSlot(plot, slotNum, uuid)
+    if not plot then return false end
+    local slots = plot:FindFirstChild("Slots")
+    if not slots then return false end
+    local slotObj = slots:FindFirstChild(tostring(slotNum))
+    if not slotObj then return false end
+    for _, filho in ipairs(slotObj:GetChildren()) do
+        if tostring(filho.Name) == tostring(uuid) then return true end
+    end
     return false
 end
 
--- ================= UI =================
-local ACCENT = Color3.fromRGB(255, 120, 0)
-local HEADER_BG = Color3.fromRGB(30, 12, 0)
-local STROKE = Color3.fromRGB(160, 70, 0)
-local DISCORD_NAME = "foreverwings"
-local DISCORD_USER = "foreverwingsss"
-local AVATAR_ID = "112790932368352"
+local fixedCoords = {
+    Vector3.new(-1916, -19, 11268), Vector3.new(-1994, -19, 11361), Vector3.new(-2078, -19, 11352),
+    Vector3.new(-1874, -19, 11318), Vector3.new(-1874, -19, 11363), Vector3.new(-1806, -19, 11323),
+    Vector3.new(-1799, -19, 11362)
+}
+local TEMPO_ENTRE_CASAS = 0.3
+local visitedRound = {}
+local lastTeleportTime = 0
 
-local WIDTH_NORMAL = 195
-local WIDTH_EXPANDED = 200
+local function findAllSigns()
+    local f = {}
+    for _, obj in pairs(game.Workspace:GetDescendants()) do
+        if obj.Name == "TrickOrTreatSign" and obj:IsA("Attachment") then
+            local b = obj:FindFirstChild("TrickOrTreatSign")
+            if b and b:FindFirstChild("Content") then
+                local t = b.Content:FindFirstChild("Title")
+                if t and t:IsA("TextLabel") then table.insert(f, { attachment = obj, titleLabel = t }) end
+            end
+        end
+    end
+    return f
+end
 
-local mainFrame
+local function getSignPosition(s)
+    if s:IsA("Attachment") then
+        local ok, p = pcall(function() return s.WorldPosition end)
+        if ok and p and p.Magnitude > 0 then return p end
+    end
+    if s:IsA("Attachment") and s.Parent and s.Parent:IsA("BasePart") then
+        local ok, p = pcall(function() return (s.Parent.CFrame * s.CFrame).Position end)
+        if ok and p then return p end
+    end
+end
+
+local function getClosestFixedCoord(p)
+    local c, d = nil, math.huge
+    for _, coord in ipairs(fixedCoords) do
+        local dist = (coord - p).Magnitude
+        if dist < d then d = dist; c = coord end
+    end
+    return c
+end
+
+local function teleportToCoord(coord)
+    local char = LocalPlayer.Character
+    if not char then return end
+    pcall(function() char:PivotTo(CFrame.new(coord)) end)
+end
+
+-- ================== VISUAL ==================
+local ACCENT = Color3.fromRGB(170, 80, 255)
+local HEADER_BG = Color3.fromRGB(45, 20, 70)
+local STROKE = Color3.fromRGB(100, 60, 160)
+local BG_COLOR = Color3.fromRGB(18, 15, 25)
+local ITEM_BG = Color3.fromRGB(28, 24, 40)
+local TEXT_COLOR = Color3.fromRGB(230, 225, 245)
+local TEXT_MUTED = Color3.fromRGB(150, 140, 170)
+
+local WIDTH_NORMAL = 260
+local WIDTH_EXPANDED = 260
+local HEIGHT_QUESTS = 320
+local HEIGHT_TABS = 320
+
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AutoHalloweenUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.Parent = coreGui
+ScreenGui.Name = "AutoHalloweenUI"; ScreenGui.ResetOnSpawn = false; ScreenGui.IgnoreGuiInset = true; ScreenGui.Parent = coreGui
 
-local shadow = Instance.new("Frame")
-shadow.Size = UDim2.new(0, WIDTH_NORMAL, 0, 265)
-shadow.Position = UDim2.new(0, 6, 0.5, -132)
-shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-shadow.BackgroundTransparency = 0.7
-shadow.BorderSizePixel = 0
-shadow.ZIndex = 0
-shadow.Parent = ScreenGui
-local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 8); sc.Parent = shadow
+local shadow = Instance.new("Frame"); shadow.Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_QUESTS); shadow.Position = UDim2.new(0, 6, 0.5, -160); shadow.BackgroundColor3 = Color3.fromRGB(0,0,0); shadow.BackgroundTransparency = 0.6; shadow.BorderSizePixel = 0; shadow.ZIndex = 0; shadow.Parent = ScreenGui
+local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 12); sc.Parent = shadow
 
-mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, WIDTH_NORMAL, 0, 265)
-mainFrame.Position = UDim2.new(0, 8, 0.5, -135)
-mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 15)
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.ZIndex = 1
-mainFrame.ClipsDescendants = true
-mainFrame.Parent = ScreenGui
-local mc = Instance.new("UICorner"); mc.CornerRadius = UDim.new(0, 8); mc.Parent = mainFrame
+local mainFrame = Instance.new("Frame"); mainFrame.Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_QUESTS); mainFrame.Position = UDim2.new(0, 8, 0.5, -163); mainFrame.BackgroundColor3 = BG_COLOR; mainFrame.BorderSizePixel = 0; mainFrame.Active = true; mainFrame.ZIndex = 1; mainFrame.ClipsDescendants = true; mainFrame.Parent = ScreenGui
+local mc = Instance.new("UICorner"); mc.CornerRadius = UDim.new(0, 12); mc.Parent = mainFrame
+local ms = Instance.new("UIStroke"); ms.Name = "MainStroke"; ms.Thickness = 1.5; ms.Color = ACCENT; ms.Transparency = 0.4; ms.Parent = mainFrame
+local gradient = Instance.new("UIGradient"); gradient.Rotation = 90; gradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(30,20,45)), ColorSequenceKeypoint.new(1, Color3.fromRGB(15,10,20))}); gradient.Parent = mainFrame
 
-local ms = Instance.new("UIStroke"); ms.Name = "MainStroke"; ms.Thickness = 1; ms.Color = ACCENT; ms.Transparency = 0.6; ms.Parent = mainFrame
-local gradient = Instance.new("UIGradient"); gradient.Rotation = 90
-gradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 10, 25)), ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 8, 10))})
-gradient.Parent = mainFrame
+local header = Instance.new("Frame"); header.Size = UDim2.new(1,0,0,32); header.BackgroundColor3 = HEADER_BG; header.BackgroundTransparency = 0.2; header.BorderSizePixel = 0; header.ZIndex = 2; header.Parent = mainFrame
+local hc = Instance.new("UICorner"); hc.CornerRadius = UDim.new(0, 12); hc.Parent = header
+local hf = Instance.new("Frame"); hf.Size = UDim2.new(1,0,0.5,0); hf.Position = UDim2.new(0,0,0.5,0); hf.BackgroundColor3 = HEADER_BG; hf.BackgroundTransparency = 0.2; hf.BorderSizePixel = 0; hf.ZIndex = 1; hf.Parent = header
+local accentBar = Instance.new("Frame"); accentBar.Size = UDim2.new(0,4,0,18); accentBar.Position = UDim2.new(0,10,0.5,-9); accentBar.BackgroundColor3 = ACCENT; accentBar.BorderSizePixel = 0; accentBar.ZIndex = 3; accentBar.Parent = header
+local abc = Instance.new("UICorner"); abc.CornerRadius = UDim.new(1,0); abc.Parent = accentBar
+local hl = Instance.new("TextLabel"); hl.Size = UDim2.new(1,-50,1,0); hl.Position = UDim2.new(0,22,0,0); hl.BackgroundTransparency = 1; hl.Text = "🎃 AUTO HALLOWEEN"; hl.TextColor3 = Color3.fromRGB(220, 200, 255); hl.TextSize = 12; hl.Font = Enum.Font.GothamBold; hl.TextXAlignment = Enum.TextXAlignment.Left; hl.ZIndex = 3; hl.Parent = header
 
-local batDeco = Instance.new("TextLabel"); batDeco.Size = UDim2.new(0, 30, 0, 30); batDeco.Position = UDim2.new(1, -35, 1, -35); batDeco.BackgroundTransparency = 1; batDeco.Text = "🦇"; batDeco.TextSize = 24; batDeco.TextTransparency = 0.6; batDeco.Rotation = -15; batDeco.ZIndex = 0; batDeco.Parent = mainFrame
-
-local header = Instance.new("Frame"); header.Size = UDim2.new(1, 0, 0, 28); header.BackgroundColor3 = HEADER_BG; header.BackgroundTransparency = 0.1; header.BorderSizePixel = 0; header.ZIndex = 2; header.Parent = mainFrame
-local hc = Instance.new("UICorner"); hc.CornerRadius = UDim.new(0, 8); hc.Parent = header
-local hf = Instance.new("Frame"); hf.Size = UDim2.new(1, 0, 0.5, 0); hf.Position = UDim2.new(0, 0, 0.5, 0); hf.BackgroundColor3 = HEADER_BG; hf.BackgroundTransparency = 0.1; hf.BorderSizePixel = 0; hf.ZIndex = 1; hf.Parent = header
-
-local accentBar = Instance.new("Frame"); accentBar.Size = UDim2.new(0, 3, 0, 16); accentBar.Position = UDim2.new(0, 10, 0.5, -8); accentBar.BackgroundColor3 = ACCENT; accentBar.BorderSizePixel = 0; accentBar.ZIndex = 3; accentBar.Parent = header
-local abc = Instance.new("UICorner"); abc.CornerRadius = UDim.new(1, 0); abc.Parent = accentBar
-
-local hl = Instance.new("TextLabel"); hl.Size = UDim2.new(1, -50, 1, 0); hl.Position = UDim2.new(0, 20, 0, 0); hl.BackgroundTransparency = 1; hl.Text = "🎃 AUTO HALLOWEEN"; hl.TextColor3 = ACCENT; hl.TextSize = 11; hl.Font = Enum.Font.GothamBold; hl.TextXAlignment = Enum.TextXAlignment.Left; hl.ZIndex = 3; hl.Parent = header
-local titleGradient = Instance.new("UIGradient"); titleGradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 200, 0)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 80, 0))}); titleGradient.Parent = hl
-
-local minimizeBtn = Instance.new("TextButton"); minimizeBtn.Size = UDim2.new(0, 20, 0, 20); minimizeBtn.Position = UDim2.new(1, -26, 0.5, -10); minimizeBtn.BackgroundTransparency = 1; minimizeBtn.Text = "-"; minimizeBtn.TextColor3 = ACCENT; minimizeBtn.TextSize = 16; minimizeBtn.Font = Enum.Font.GothamBold; minimizeBtn.ZIndex = 3; minimizeBtn.Parent = header
+local minimizeBtn = Instance.new("TextButton"); minimizeBtn.Size = UDim2.new(0,20,0,20); minimizeBtn.Position = UDim2.new(1,-26,0.5,-10); minimizeBtn.BackgroundTransparency = 1; minimizeBtn.Text = "-"; minimizeBtn.TextColor3 = Color3.fromRGB(200, 150, 255); minimizeBtn.TextSize = 18; minimizeBtn.Font = Enum.Font.GothamBold; minimizeBtn.ZIndex = 3; minimizeBtn.Parent = header
 
 local dragging, dragStart, startPos = false, nil, nil
-header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true; dragStart = input.Position; startPos = mainFrame.Position
-    end
-end)
-header.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if not dragging then return end
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        local d = input.Position - dragStart
-        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-        shadow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X - 2, startPos.Y.Scale, startPos.Y.Offset + d.Y - 2)
-    end
-end)
+header.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = i.Position; startPos = mainFrame.Position end end)
+header.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+UserInputService.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - dragStart; mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y); shadow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X - 2, startPos.Y.Scale, startPos.Y.Offset + d.Y - 2) end end)
 
--- Abas Superiores
-local tabQuestsBtn = Instance.new("TextButton")
-tabQuestsBtn.Size = UDim2.new(0.33, -8, 0, 18); tabQuestsBtn.Position = UDim2.new(0, 10, 0, 32)
-tabQuestsBtn.BackgroundColor3 = HEADER_BG; tabQuestsBtn.Text = "📜 QUESTS"; tabQuestsBtn.TextColor3 = ACCENT; tabQuestsBtn.Font = Enum.Font.GothamBold; tabQuestsBtn.TextSize = 9; tabQuestsBtn.ZIndex = 3; tabQuestsBtn.Parent = mainFrame
-Instance.new("UICorner", tabQuestsBtn).CornerRadius = UDim.new(0, 4)
+local tabQuestsBtn = Instance.new("TextButton"); tabQuestsBtn.Size = UDim2.new(0.25,-8,0,22); tabQuestsBtn.Position = UDim2.new(0,8,0,38); tabQuestsBtn.BackgroundColor3 = HEADER_BG; tabQuestsBtn.Text = "📜 QUESTS"; tabQuestsBtn.TextColor3 = ACCENT; tabQuestsBtn.Font = Enum.Font.GothamBold; tabQuestsBtn.TextSize = 9; tabQuestsBtn.ZIndex = 3; tabQuestsBtn.Parent = mainFrame; Instance.new("UICorner", tabQuestsBtn).CornerRadius = UDim.new(0,6)
+local tabEquipBtn = Instance.new("TextButton"); tabEquipBtn.Size = UDim2.new(0.25,-8,0,22); tabEquipBtn.Position = UDim2.new(0.25,2,0,38); tabEquipBtn.BackgroundColor3 = ITEM_BG; tabEquipBtn.Text = "⚡ EQUIP"; tabEquipBtn.TextColor3 = TEXT_MUTED; tabEquipBtn.Font = Enum.Font.GothamBold; tabEquipBtn.TextSize = 9; tabEquipBtn.ZIndex = 3; tabEquipBtn.Parent = mainFrame; Instance.new("UICorner", tabEquipBtn).CornerRadius = UDim.new(0,6)
+local tabTowerBtn = Instance.new("TextButton"); tabTowerBtn.Size = UDim2.new(0.25,-8,0,22); tabTowerBtn.Position = UDim2.new(0.5,4,0,38); tabTowerBtn.BackgroundColor3 = ITEM_BG; tabTowerBtn.Text = "🏰 TOWER"; tabTowerBtn.TextColor3 = TEXT_MUTED; tabTowerBtn.Font = Enum.Font.GothamBold; tabTowerBtn.TextSize = 9; tabTowerBtn.ZIndex = 3; tabTowerBtn.Parent = mainFrame; Instance.new("UICorner", tabTowerBtn).CornerRadius = UDim.new(0,6)
+local tabRollBtn = Instance.new("TextButton"); tabRollBtn.Size = UDim2.new(0.25,-8,0,22); tabRollBtn.Position = UDim2.new(0.75,-2,0,38); tabRollBtn.BackgroundColor3 = ITEM_BG; tabRollBtn.Text = "🎲 AUTO ROLL"; tabRollBtn.TextColor3 = TEXT_MUTED; tabRollBtn.Font = Enum.Font.GothamBold; tabRollBtn.TextSize = 8; tabRollBtn.ZIndex = 3; tabRollBtn.Parent = mainFrame; Instance.new("UICorner", tabRollBtn).CornerRadius = UDim.new(0,6)
 
-local tabEquipBtn = Instance.new("TextButton")
-tabEquipBtn.Size = UDim2.new(0.33, -8, 0, 18); tabEquipBtn.Position = UDim2.new(0.33, 4, 0, 32)
-tabEquipBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40); tabEquipBtn.Text = "⚡ EQUIP"; tabEquipBtn.TextColor3 = Color3.fromRGB(150, 150, 150); tabEquipBtn.Font = Enum.Font.GothamBold; tabEquipBtn.TextSize = 9; tabEquipBtn.ZIndex = 3; tabEquipBtn.Parent = mainFrame
-Instance.new("UICorner", tabEquipBtn).CornerRadius = UDim.new(0, 4)
+local PageQuests = Instance.new("Frame"); PageQuests.Size = UDim2.new(1,0,0,150); PageQuests.Position = UDim2.new(0,0,0,66); PageQuests.BackgroundTransparency = 1; PageQuests.Parent = mainFrame
+local PageEquip = Instance.new("Frame"); PageEquip.Size = UDim2.new(0,WIDTH_EXPANDED - 10,0,150); PageEquip.Position = UDim2.new(0,0,0,66); PageEquip.BackgroundTransparency = 1; PageEquip.Visible = false; PageEquip.Parent = mainFrame
+local PageTower = Instance.new("Frame"); PageTower.Size = UDim2.new(0,WIDTH_EXPANDED - 10,0,150); PageTower.Position = UDim2.new(0,0,0,66); PageTower.BackgroundTransparency = 1; PageTower.Visible = false; PageTower.Parent = mainFrame
+local PageRoll = Instance.new("Frame"); PageRoll.Size = UDim2.new(0,WIDTH_EXPANDED - 10,0,200); PageRoll.Position = UDim2.new(0,0,0,66); PageRoll.BackgroundTransparency = 1; PageRoll.Visible = false; PageRoll.Parent = mainFrame
 
-local tabTowerBtn = Instance.new("TextButton")
-tabTowerBtn.Size = UDim2.new(0.33, -8, 0, 18); tabTowerBtn.Position = UDim2.new(0.66, -2, 0, 32)
-tabTowerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40); tabTowerBtn.Text = "🏰 TOWER"; tabTowerBtn.TextColor3 = Color3.fromRGB(150, 150, 150); tabTowerBtn.Font = Enum.Font.GothamBold; tabTowerBtn.TextSize = 9; tabTowerBtn.ZIndex = 3; tabTowerBtn.Parent = mainFrame
-Instance.new("UICorner", tabTowerBtn).CornerRadius = UDim.new(0, 4)
+local sf = Instance.new("Frame"); sf.Size = UDim2.new(1,-16,0,18); sf.Position = UDim2.new(0,8,0,262); sf.BackgroundColor3 = Color3.fromRGB(10,8,15); sf.BorderSizePixel = 0; sf.ZIndex = 2; sf.Parent = mainFrame; Instance.new("UICorner", sf).CornerRadius = UDim.new(0,4)
+local statusLabel = Instance.new("TextLabel"); statusLabel.Size = UDim2.new(1,-8,1,0); statusLabel.Position = UDim2.new(0,4,0,0); statusLabel.BackgroundTransparency = 1; statusLabel.Text = "Pronto."; statusLabel.TextColor3 = ACCENT; statusLabel.TextSize = 8; statusLabel.Font = Enum.Font.GothamBold; statusLabel.TextXAlignment = Enum.TextXAlignment.Left; statusLabel.TextTruncate = Enum.TextTruncate.AtEnd; statusLabel.ZIndex = 3; statusLabel.Parent = sf
 
-local PageQuests = Instance.new("Frame"); PageQuests.Size = UDim2.new(1, 0, 0, 150); PageQuests.Position = UDim2.new(0, 0, 0, 52); PageQuests.BackgroundTransparency = 1; PageQuests.Parent = mainFrame
-local PageEquip = Instance.new("Frame"); PageEquip.Size = UDim2.new(0, WIDTH_EXPANDED - 10, 0, 150); PageEquip.Position = UDim2.new(0, 0, 0, 52); PageEquip.BackgroundTransparency = 1; PageEquip.Visible = false; PageEquip.Parent = mainFrame
-local PageTower = Instance.new("Frame"); PageTower.Size = UDim2.new(0, WIDTH_EXPANDED - 10, 0, 150); PageTower.Position = UDim2.new(0, 0, 0, 52); PageTower.BackgroundTransparency = 1; PageTower.Visible = false; PageTower.Parent = mainFrame
-
--- ==========================================
--- DISCORD CONTAINER
--- ==========================================
-local sf = Instance.new("Frame"); sf.Size = UDim2.new(1, -20, 0, 16); sf.Position = UDim2.new(0, 10, 0, 202); sf.BackgroundColor3 = Color3.fromRGB(6, 6, 8); sf.BorderSizePixel = 0; sf.ZIndex = 2; sf.Parent = mainFrame
-local sfc = Instance.new("UICorner"); sfc.CornerRadius = UDim.new(0, 3); sfc.Parent = sf
-local statusLabel = Instance.new("TextLabel"); statusLabel.Size = UDim2.new(1, -8, 1, 0); statusLabel.Position = UDim2.new(0, 4, 0, 0); statusLabel.BackgroundTransparency = 1; statusLabel.Text = "Pronto."; statusLabel.TextColor3 = ACCENT; statusLabel.TextSize = 8; statusLabel.Font = Enum.Font.Gotham; statusLabel.TextXAlignment = Enum.TextXAlignment.Left; statusLabel.TextTruncate = Enum.TextTruncate.AtEnd; statusLabel.ZIndex = 3; statusLabel.Parent = sf
-
-local discordContainer = Instance.new("Frame")
-discordContainer.Size = UDim2.new(1, -20, 0, 40)
-discordContainer.Position = UDim2.new(0, 10, 0, 220)
-discordContainer.BackgroundColor3 = Color3.fromRGB(20, 10, 25)
-discordContainer.BorderSizePixel = 0
-discordContainer.ZIndex = 2
-discordContainer.ClipsDescendants = true
-discordContainer.Parent = mainFrame
-local profileGradient = Instance.new("UIGradient"); profileGradient.Rotation = 45; profileGradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 10, 40)), ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 18))}); profileGradient.Parent = discordContainer
-local dcCorner = Instance.new("UICorner"); dcCorner.CornerRadius = UDim.new(0, 6); dcCorner.Parent = discordContainer
-local dcStroke = Instance.new("UIStroke"); dcStroke.Color = ACCENT; dcStroke.Thickness = 1; dcStroke.Transparency = 0.3; dcStroke.Parent = discordContainer
-
-local avatarFrame = Instance.new("Frame")
-avatarFrame.Size = UDim2.new(0, 30, 0, 30)
-avatarFrame.Position = UDim2.new(0, 6, 0.5, -15)
-avatarFrame.BackgroundColor3 = Color3.fromRGB(255, 120, 0)
-avatarFrame.BorderSizePixel = 0
-avatarFrame.ClipsDescendants = true
-avatarFrame.ZIndex = 3
-avatarFrame.Parent = discordContainer
-Instance.new("UICorner", avatarFrame).CornerRadius = UDim.new(1, 0)
-local avatarImg = Instance.new("ImageLabel"); avatarImg.Size = UDim2.new(1, -4, 1, -4); avatarImg.Position = UDim2.new(0, 2, 0, 2); avatarImg.BackgroundTransparency = 1; avatarImg.Image = "rbxassetid://" .. AVATAR_ID; avatarImg.ZIndex = 3; avatarImg.Parent = avatarFrame
-Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
-
-local displayName = Instance.new("TextLabel")
-displayName.Size = UDim2.new(1, -90, 0, 16) 
-displayName.Position = UDim2.new(0, 44, 0, 5)
-displayName.BackgroundTransparency = 1
-displayName.Text = DISCORD_NAME
-displayName.TextColor3 = Color3.fromRGB(255, 255, 255)
-displayName.Font = Enum.Font.GothamBold
-displayName.TextSize = 13
-displayName.TextXAlignment = Enum.TextXAlignment.Left
-displayName.TextTruncate = Enum.TextTruncate.AtEnd
-displayName.ZIndex = 3
-displayName.Parent = discordContainer
-local nameGradient = Instance.new("UIGradient"); nameGradient.Rotation = 0; nameGradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(110, 115, 120))}); nameGradient.Parent = displayName
-
-local usernameLabel = Instance.new("TextLabel")
-usernameLabel.Size = UDim2.new(1, -90, 0, 14)
-usernameLabel.Position = UDim2.new(0, 44, 0, 21)
-usernameLabel.BackgroundTransparency = 1
-usernameLabel.Text = "@" .. DISCORD_USER
-usernameLabel.TextColor3 = Color3.fromRGB(150, 140, 160)
-usernameLabel.Font = Enum.Font.Gotham
-usernameLabel.TextSize = 10
-usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
-usernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-usernameLabel.ZIndex = 3
-usernameLabel.Parent = discordContainer
+local discordContainer = Instance.new("Frame"); discordContainer.Size = UDim2.new(1,-16,0,38); discordContainer.Position = UDim2.new(0,8,0,284); discordContainer.BackgroundColor3 = Color3.fromRGB(25,18,35); discordContainer.BorderSizePixel = 0; discordContainer.ZIndex = 2; discordContainer.ClipsDescendants = true; discordContainer.Parent = mainFrame
+Instance.new("UICorner", discordContainer).CornerRadius = UDim.new(0,8)
+local dcStroke = Instance.new("UIStroke"); dcStroke.Color = ACCENT; dcStroke.Thickness = 1; dcStroke.Transparency = 0.6; dcStroke.Parent = discordContainer
+local avatarFrame = Instance.new("Frame"); avatarFrame.Size = UDim2.new(0,28,0,28); avatarFrame.Position = UDim2.new(0,6,0.5,-14); avatarFrame.BackgroundColor3 = ACCENT; avatarFrame.BorderSizePixel = 0; avatarFrame.ClipsDescendants = true; avatarFrame.ZIndex = 3; avatarFrame.Parent = discordContainer; Instance.new("UICorner", avatarFrame).CornerRadius = UDim.new(1,0)
+local avatarImg = Instance.new("ImageLabel"); avatarImg.Size = UDim2.new(1,-4,1,-4); avatarImg.Position = UDim2.new(0,2,0,2); avatarImg.BackgroundTransparency = 1; avatarImg.Image = "rbxassetid://112790932368352"; avatarImg.ZIndex = 3; avatarImg.Parent = avatarFrame; Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1,0)
+local displayName = Instance.new("TextLabel"); displayName.Size = UDim2.new(1,-120,0,14); displayName.Position = UDim2.new(0,40,0,4); displayName.BackgroundTransparency = 1; displayName.Text = "foreverwings"; displayName.TextColor3 = Color3.fromRGB(255,255,255); displayName.Font = Enum.Font.GothamBold; displayName.TextSize = 12; displayName.TextXAlignment = Enum.TextXAlignment.Left; displayName.ZIndex = 3; displayName.Parent = discordContainer
+local usernameLabel = Instance.new("TextLabel"); usernameLabel.Size = UDim2.new(1,-80,0,12); usernameLabel.Position = UDim2.new(0,40,0,18); usernameLabel.BackgroundTransparency = 1; usernameLabel.Text = "@foreverwingsss"; usernameLabel.TextColor3 = TEXT_MUTED; usernameLabel.Font = Enum.Font.Gotham; usernameLabel.TextSize = 9; usernameLabel.TextXAlignment = Enum.TextXAlignment.Left; usernameLabel.ZIndex = 3; usernameLabel.Parent = discordContainer
 
 local ownerBadge = Instance.new("TextLabel")
-ownerBadge.Size = UDim2.new(0, 40, 0, 16)
-ownerBadge.Position = UDim2.new(1, -45, 0, 12)
+ownerBadge.Size = UDim2.new(0,55,0,16)
+ownerBadge.Position = UDim2.new(1,-60,0.5,-8)
 ownerBadge.BackgroundTransparency = 1
 ownerBadge.Text = "◆ OWNER"
-ownerBadge.TextColor3 = Color3.fromRGB(255, 255, 255)
-ownerBadge.Font = Enum.Font.GothamBold
-ownerBadge.TextSize = 10
+ownerBadge.TextColor3 = ACCENT
+ownerBadge.Font = Enum.Font.GothamBlack
+ownerBadge.TextSize = 11
 ownerBadge.TextXAlignment = Enum.TextXAlignment.Right
 ownerBadge.ZIndex = 5
 ownerBadge.Parent = discordContainer
-local badgeGradient = Instance.new("UIGradient"); badgeGradient.Rotation = 0; badgeGradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(110, 115, 120))}); badgeGradient.Parent = ownerBadge
 
-local function atualizarLayoutDiscord(width)
-    discordContainer.Size = UDim2.new(0, width - 20, 0, 40)
-    sf.Size = UDim2.new(0, width - 20, 0, 16)
-end
+local currentTargetWidth, currentTargetHeight = WIDTH_NORMAL, HEIGHT_QUESTS
+local isAnimatingSize = false
+local isMinimized = false
 
--- Animação de largura
-local currentTargetWidth = WIDTH_NORMAL
-local isAnimatingWidth = false
-local function animateWidth(target)
-    currentTargetWidth = target
-    if isAnimatingWidth then return end
-    isAnimatingWidth = true
+local function animateSize(w, h)
+    currentTargetWidth, currentTargetHeight = w, h
+    if isAnimatingSize then return end
+    isAnimatingSize = true
     task.spawn(function()
-        while math.abs(mainFrame.Size.X.Offset - currentTargetWidth) > 1 do
-            local current = mainFrame.Size.X.Offset
-            local newW = current + (currentTargetWidth - current) * 0.25
-            if math.abs(newW - currentTargetWidth) < 1 then newW = currentTargetWidth end
-            mainFrame.Size = UDim2.new(0, newW, 0, mainFrame.Size.Y.Offset)
-            shadow.Size = UDim2.new(0, newW, 0, shadow.Size.Y.Offset)
-            atualizarLayoutDiscord(newW)
+        while math.abs(mainFrame.Size.X.Offset - currentTargetWidth) > 1 or math.abs(mainFrame.Size.Y.Offset - currentTargetHeight) > 1 do
+            local cw, ch = mainFrame.Size.X.Offset, mainFrame.Size.Y.Offset
+            local nw = cw + (currentTargetWidth - cw) * 0.25
+            local nh = ch + (currentTargetHeight - ch) * 0.25
+            if math.abs(nw - currentTargetWidth) < 1 then nw = currentTargetWidth end
+            if math.abs(nh - currentTargetHeight) < 1 then nh = currentTargetHeight end
+            mainFrame.Size = UDim2.new(0, nw, 0, nh); shadow.Size = UDim2.new(0, nw, 0, nh)
             task.wait(0.02)
         end
-        mainFrame.Size = UDim2.new(0, currentTargetWidth, 0, mainFrame.Size.Y.Offset)
-        shadow.Size = UDim2.new(0, currentTargetWidth, 0, shadow.Size.Y.Offset)
-        atualizarLayoutDiscord(currentTargetWidth)
-        isAnimatingWidth = false
+        mainFrame.Size = UDim2.new(0, currentTargetWidth, 0, currentTargetHeight); shadow.Size = UDim2.new(0, currentTargetWidth, 0, currentTargetHeight)
+        isAnimatingSize = false
     end)
 end
-
-atualizarLayoutDiscord(WIDTH_NORMAL)
 
 local function resetTabs()
-    tabQuestsBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40); tabQuestsBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    tabEquipBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40); tabEquipBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    tabTowerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40); tabTowerBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    PageQuests.Visible = false; PageEquip.Visible = false; PageTower.Visible = false
+    tabQuestsBtn.BackgroundColor3 = ITEM_BG; tabQuestsBtn.TextColor3 = TEXT_MUTED
+    tabEquipBtn.BackgroundColor3 = ITEM_BG; tabEquipBtn.TextColor3 = TEXT_MUTED
+    tabTowerBtn.BackgroundColor3 = ITEM_BG; tabTowerBtn.TextColor3 = TEXT_MUTED
+    tabRollBtn.BackgroundColor3 = ITEM_BG; tabRollBtn.TextColor3 = TEXT_MUTED
+    PageQuests.Visible = false; PageEquip.Visible = false; PageTower.Visible = false; PageRoll.Visible = false
 end
 
-tabQuestsBtn.MouseButton1Click:Connect(function()
-    resetTabs(); PageQuests.Visible = true
-    tabQuestsBtn.BackgroundColor3 = HEADER_BG; tabQuestsBtn.TextColor3 = ACCENT
-    if not isMinimized then animateWidth(WIDTH_NORMAL) end
-end)
-tabEquipBtn.MouseButton1Click:Connect(function()
-    resetTabs(); PageEquip.Visible = true
-    tabEquipBtn.BackgroundColor3 = HEADER_BG; tabEquipBtn.TextColor3 = ACCENT
-    if not isMinimized then animateWidth(WIDTH_EXPANDED) end
-end)
-tabTowerBtn.MouseButton1Click:Connect(function()
-    resetTabs(); PageTower.Visible = true
-    tabTowerBtn.BackgroundColor3 = HEADER_BG; tabTowerBtn.TextColor3 = ACCENT
-    if not isMinimized then animateWidth(WIDTH_EXPANDED) end
-end)
+tabQuestsBtn.MouseButton1Click:Connect(function() resetTabs(); PageQuests.Visible = true; tabQuestsBtn.BackgroundColor3 = HEADER_BG; tabQuestsBtn.TextColor3 = ACCENT; if not isMinimized then animateSize(WIDTH_NORMAL, HEIGHT_QUESTS) end end)
+tabEquipBtn.MouseButton1Click:Connect(function() resetTabs(); PageEquip.Visible = true; tabEquipBtn.BackgroundColor3 = HEADER_BG; tabEquipBtn.TextColor3 = ACCENT; if not isMinimized then animateSize(WIDTH_EXPANDED, HEIGHT_TABS) end end)
+tabTowerBtn.MouseButton1Click:Connect(function() resetTabs(); PageTower.Visible = true; tabTowerBtn.BackgroundColor3 = HEADER_BG; tabTowerBtn.TextColor3 = ACCENT; if not isMinimized then animateSize(WIDTH_EXPANDED, HEIGHT_TABS) end end)
+tabRollBtn.MouseButton1Click:Connect(function() resetTabs(); PageRoll.Visible = true; tabRollBtn.BackgroundColor3 = HEADER_BG; tabRollBtn.TextColor3 = ACCENT; if not isMinimized then animateSize(WIDTH_EXPANDED, HEIGHT_TABS) end end)
 
--- ================= UI QUESTS =================
-local function criarBotaoQuest(texto, posY)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 24); btn.Position = UDim2.new(0, 10, 0, posY)
-    btn.BackgroundColor3 = Color3.fromRGB(32, 16, 16); btn.TextColor3 = Color3.fromRGB(180, 90, 90); btn.Text = texto; btn.TextSize = 10; btn.Font = Enum.Font.GothamBold; btn.BorderSizePixel = 0; btn.AutoButtonColor = false; btn.ZIndex = 2; btn.Parent = PageQuests
-    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 5); bc.Parent = btn
-    local bs = Instance.new("UIStroke"); bs.Thickness = 1; bs.Color = STROKE; bs.Transparency = 0.5; bs.Parent = btn
-    return btn, bs
-end
-
-local BtnDoors, StrDoors = criarBotaoQuest("🚪 AUTO TP DOORS", 0)
-local BtnComplete, StrComplete = criarBotaoQuest("📜 AUTO COMPLETE", 28)
-local BtnClaim, StrClaim = criarBotaoQuest("🏆 AUTO CLAIM", 56)
-local BtnRoll, StrRoll = criarBotaoQuest("🎃 AUTO ROLL PUMPKIN DICE", 84)
-local BtnPotion, StrPotion = criarBotaoQuest("🧪 AUTO USE POTION", 112)
-
--- ================= UI EQUIP (DUAS SEÇÕES) =================
-local QUIRKS = {"Fortune's Favor", "Midas Touch", "Prodigy"}
-local EQ_COL_GAP = 4
-local EQ_COL_WIDTH = (WIDTH_EXPANDED - 16 - EQ_COL_GAP) / 2
-local EQ_SCROLL_H = 78
-local EQ_SELECT_H = 16
-local EQ_SCROLL_TOP = 16
-local EQ_SELECT_TOP = EQ_SCROLL_TOP + EQ_SCROLL_H + 3
-local EQ_TOGGLE_TOP = EQ_SELECT_TOP + EQ_SELECT_H + 4
-
--- Esquerda (Lock)
-local LockSection = Instance.new("Frame")
-LockSection.Size = UDim2.new(0, EQ_COL_WIDTH, 0, 150)
-LockSection.Position = UDim2.new(0, 8, 0, 0)
-LockSection.BackgroundTransparency = 1
-LockSection.Parent = PageEquip
-
--- Direita (Equip)
-local EquipSection = Instance.new("Frame")
-EquipSection.Size = UDim2.new(0, EQ_COL_WIDTH, 0, 150)
-EquipSection.Position = UDim2.new(0, 8 + EQ_COL_WIDTH + EQ_COL_GAP, 0, 0)
-EquipSection.BackgroundTransparency = 1
-EquipSection.Parent = PageEquip
-
-local function montarSecaoEquip(parent, titulo)
-    local titleLbl = Instance.new("TextLabel")
-    titleLbl.Size = UDim2.new(1, 0, 0, 14)
-    titleLbl.Position = UDim2.new(0, 2, 0, 0)
-    titleLbl.BackgroundTransparency = 1
-    titleLbl.Text = titulo
-    titleLbl.TextColor3 = ACCENT
-    titleLbl.Font = Enum.Font.GothamBold
-    titleLbl.TextSize = 8
-    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-    titleLbl.ZIndex = 3
-    titleLbl.Parent = parent
-
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, -4, 0, EQ_SCROLL_H)
-    scroll.Position = UDim2.new(0, 2, 0, EQ_SCROLL_TOP)
-    scroll.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 2
-    scroll.ScrollBarImageColor3 = ACCENT
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    scroll.Parent = parent
-    Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 5)
-
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 1)
-    layout.Parent = scroll
-
-    local pad = Instance.new("UIPadding")
-    pad.PaddingTop = UDim.new(0, 2)
-    pad.PaddingLeft = UDim.new(0, 2)
-    pad.PaddingBottom = UDim.new(0, 2)
-    pad.Parent = scroll
-
-    return scroll
-end
-
-local lockScroll = montarSecaoEquip(LockSection, "🔒 LOCK")
-local equipScroll = montarSecaoEquip(EquipSection, "⚡ EQUIP")
-
-local function criarBotaoQuirk(parent, texto, layoutOrder)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -2, 0, 20)
-    btn.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-    btn.Text = ""
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.ZIndex = 2
-    btn.LayoutOrder = layoutOrder
-    btn.Parent = parent
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-    local bs = Instance.new("UIStroke")
-    bs.Thickness = 1
-    bs.Color = STROKE
-    bs.Transparency = 0.5
-    bs.Parent = btn
-
-    local circle = Instance.new("Frame")
-    circle.Size = UDim2.new(0, 9, 0, 9)
-    circle.Position = UDim2.new(0, 5, 0.5, -4.5)
-    circle.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-    circle.BorderSizePixel = 0
-    circle.ZIndex = 3
-    circle.Parent = btn
-    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-    local cStroke = Instance.new("UIStroke")
-    cStroke.Color = STROKE
-    cStroke.Thickness = 1
-    cStroke.Parent = circle
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -16, 1, 0)
-    label.Position = UDim2.new(0, 16, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = texto
-    label.TextColor3 = Color3.fromRGB(180, 90, 90)
-    label.TextSize = 7
-    label.Font = Enum.Font.GothamBold
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextTruncate = Enum.TextTruncate.AtEnd
-    label.ZIndex = 3
-    label.Parent = btn
-
-    return btn, bs, label, circle, cStroke
-end
-
-local function updateQuirkVisual(btn, stroke, label, circle, cstr, isOn)
-    if isOn then
-        label.TextColor3 = ACCENT
-        btn.BackgroundColor3 = Color3.fromRGB(35, 15, 0)
-        stroke.Color = ACCENT
-        circle.BackgroundColor3 = ACCENT
-        cstr.Color = ACCENT
-    else
-        label.TextColor3 = Color3.fromRGB(180, 90, 90)
-        btn.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-        stroke.Color = STROKE
-        circle.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-        cstr.Color = STROKE
-    end
-end
-
--- ================= ESTADOS E POPULAÇÃO =================
-local SelectedLocks = {} 
-local SelectedEquip = nil
-local LockButtons = {}
-local EquipButtons = {}
-
--- Popula Lock (Multi)
-for i, q in ipairs(QUIRKS) do
-    local btn, str, lbl, circ, cstr = criarBotaoQuirk(lockScroll, q, i)
-    LockButtons[q] = { btn = btn, str = str, lbl = lbl, circ = circ, cstr = cstr }
-    btn.MouseButton1Click:Connect(function()
-        if SelectedLocks[q] then
-            SelectedLocks[q] = nil
-            updateQuirkVisual(btn, str, lbl, circ, cstr, false)
-        else
-            SelectedLocks[q] = true
-            updateQuirkVisual(btn, str, lbl, circ, cstr, true)
-        end
-    end)
-end
-
--- Popula Equip (Single)
-for i, q in ipairs(QUIRKS) do
-    local btn, str, lbl, circ, cstr = criarBotaoQuirk(equipScroll, q, i)
-    EquipButtons[q] = { btn = btn, str = str, lbl = lbl, circ = circ, cstr = cstr }
-    btn.MouseButton1Click:Connect(function()
-        if SelectedEquip == q then
-            SelectedEquip = nil
-            updateQuirkVisual(btn, str, lbl, circ, cstr, false)
-        else
-            SelectedEquip = q
-            for _, q2 in ipairs(QUIRKS) do
-                local b = EquipButtons[q2]
-                if b then updateQuirkVisual(b.btn, b.str, b.lbl, b.circ, b.cstr, q2 == q) end
-            end
-        end
-    end)
-end
-
--- ================= BOTÕES LOCK E EQUIP =================
-local btnLock = Instance.new("TextButton")
-btnLock.Size = UDim2.new(1, -20, 0, 20)
-btnLock.Position = UDim2.new(0, 10, 0, EQ_TOGGLE_TOP)
-btnLock.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-btnLock.Text = "LOCK SELECTED"
-btnLock.TextColor3 = Color3.fromRGB(180, 90, 90)
-btnLock.TextSize = 9
-btnLock.Font = Enum.Font.GothamBold
-btnLock.BorderSizePixel = 0
-btnLock.AutoButtonColor = false
-btnLock.ZIndex = 5
-btnLock.Parent = LockSection
-Instance.new("UICorner", btnLock).CornerRadius = UDim.new(0, 5)
-local barLockStroke = Instance.new("UIStroke")
-barLockStroke.Thickness = 1
-barLockStroke.Color = STROKE
-barLockStroke.Transparency = 0.5
-barLockStroke.Parent = btnLock
-
-local btnUnlockAll = Instance.new("TextButton")
-btnUnlockAll.Size = UDim2.new(1, -20, 0, 20)
-btnUnlockAll.Position = UDim2.new(0, 10, 0, EQ_TOGGLE_TOP + 24) -- Logo abaixo do Lock
-btnUnlockAll.BackgroundColor3 = Color3.fromRGB(40, 25, 25)
-btnUnlockAll.Text = "UNLOCK ALL"
-btnUnlockAll.TextColor3 = Color3.fromRGB(200, 120, 120)
-btnUnlockAll.TextSize = 9
-btnUnlockAll.Font = Enum.Font.GothamBold
-btnUnlockAll.BorderSizePixel = 0
-btnUnlockAll.AutoButtonColor = false
-btnUnlockAll.ZIndex = 5
-btnUnlockAll.Parent = LockSection
-Instance.new("UICorner", btnUnlockAll).CornerRadius = UDim.new(0, 5)
-local barUnlockStroke = Instance.new("UIStroke")
-barUnlockStroke.Thickness = 1
-barUnlockStroke.Color = Color3.fromRGB(120, 60, 60)
-barUnlockStroke.Transparency = 0.5
-barUnlockStroke.Parent = btnUnlockAll
-
-local btnAutoEquip = Instance.new("TextButton")
-btnAutoEquip.Size = UDim2.new(1, -20, 0, 22)
-btnAutoEquip.Position = UDim2.new(0, 10, 0, EQ_TOGGLE_TOP)
-btnAutoEquip.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-btnAutoEquip.Text = "AUTO EQUIP: OFF"
-btnAutoEquip.TextColor3 = Color3.fromRGB(180, 90, 90)
-btnAutoEquip.TextSize = 9
-btnAutoEquip.Font = Enum.Font.GothamBold
-btnAutoEquip.BorderSizePixel = 0
-btnAutoEquip.AutoButtonColor = false
-btnAutoEquip.ZIndex = 5
-btnAutoEquip.Parent = EquipSection
-Instance.new("UICorner", btnAutoEquip).CornerRadius = UDim.new(0, 5)
-local barEquipStroke = Instance.new("UIStroke")
-barEquipStroke.Thickness = 1
-barEquipStroke.Color = STROKE
-barEquipStroke.Transparency = 0.5
-barEquipStroke.Parent = btnAutoEquip
-
--- ================= UI TOWER =================
-local COL_GAP = 4
-local COL_WIDTH = (WIDTH_EXPANDED - 16 - COL_GAP) / 2
-local SCROLL_H = 78
-local SELECT_H = 16
-local SCROLL_TOP = 16
-local SELECT_TOP = SCROLL_TOP + SCROLL_H + 3
-local TOGGLE_TOP = SELECT_TOP + SELECT_H + 4
-
-local HalloweenSection = Instance.new("Frame")
-HalloweenSection.Size = UDim2.new(0, COL_WIDTH, 0, 150)
-HalloweenSection.Position = UDim2.new(0, 8, 0, 0)
-HalloweenSection.BackgroundTransparency = 1
-HalloweenSection.Parent = PageTower
-
-local NormalSection = Instance.new("Frame")
-NormalSection.Size = UDim2.new(0, COL_WIDTH, 0, 150)
-NormalSection.Position = UDim2.new(0, 8 + COL_WIDTH + COL_GAP, 0, 0)
-NormalSection.BackgroundTransparency = 1
-NormalSection.Parent = PageTower
-
-local function montarSecaoTower(parent, titulo)
-    local titleLbl = Instance.new("TextLabel")
-    titleLbl.Size = UDim2.new(1, 0, 0, 14)
-    titleLbl.Position = UDim2.new(0, 2, 0, 0)
-    titleLbl.BackgroundTransparency = 1
-    titleLbl.Text = titulo
-    titleLbl.TextColor3 = ACCENT
-    titleLbl.Font = Enum.Font.GothamBold
-    titleLbl.TextSize = 8
-    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-    titleLbl.ZIndex = 3
-    titleLbl.Parent = parent
-
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, -4, 0, SCROLL_H)
-    scroll.Position = UDim2.new(0, 2, 0, SCROLL_TOP)
-    scroll.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 2
-    scroll.ScrollBarImageColor3 = ACCENT
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    scroll.Parent = parent
-    Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 5)
-
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 1)
-    layout.Parent = scroll
-
-    local pad = Instance.new("UIPadding")
-    pad.PaddingTop = UDim.new(0, 2)
-    pad.PaddingLeft = UDim.new(0, 2)
-    pad.PaddingBottom = UDim.new(0, 2)
-    pad.Parent = scroll
-
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -4, 0, SELECT_H)
-    row.Position = UDim2.new(0, 2, 0, SELECT_TOP)
-    row.BackgroundTransparency = 1
-    row.Parent = parent
-
-    local btnSelect = Instance.new("TextButton")
-    btnSelect.Size = UDim2.new(0.5, -1, 1, 0)
-    btnSelect.Position = UDim2.new(0, 0, 0, 0)
-    btnSelect.BackgroundColor3 = Color3.fromRGB(28, 40, 28)
-    btnSelect.Text = "ALL"
-    btnSelect.TextColor3 = Color3.fromRGB(120, 200, 120)
-    btnSelect.TextSize = 7
-    btnSelect.Font = Enum.Font.GothamBold
-    btnSelect.BorderSizePixel = 0
-    btnSelect.AutoButtonColor = false
-    btnSelect.ZIndex = 2
-    btnSelect.Parent = row
-    Instance.new("UICorner", btnSelect).CornerRadius = UDim.new(0, 3)
-    local bSelStr = Instance.new("UIStroke"); bSelStr.Color = Color3.fromRGB(60, 120, 60); bSelStr.Thickness = 1; bSelStr.Transparency = 0.4; bSelStr.Parent = btnSelect
-
-    local btnDeselect = Instance.new("TextButton")
-    btnDeselect.Size = UDim2.new(0.5, -1, 1, 0)
-    btnDeselect.Position = UDim2.new(0.5, 1, 0, 0)
-    btnDeselect.BackgroundColor3 = Color3.fromRGB(40, 25, 25)
-    btnDeselect.Text = "NONE"
-    btnDeselect.TextColor3 = Color3.fromRGB(200, 120, 120)
-    btnDeselect.TextSize = 7
-    btnDeselect.Font = Enum.Font.GothamBold
-    btnDeselect.BorderSizePixel = 0
-    btnDeselect.AutoButtonColor = false
-    btnDeselect.ZIndex = 2
-    btnDeselect.Parent = row
-    Instance.new("UICorner", btnDeselect).CornerRadius = UDim.new(0, 3)
-    local bDesStr = Instance.new("UIStroke"); bDesStr.Color = Color3.fromRGB(120, 60, 60); bDesStr.Thickness = 1; bDesStr.Transparency = 0.4; bDesStr.Parent = btnDeselect
-
-    return { scroll = scroll, btnSelect = btnSelect, btnDeselect = btnDeselect }
-end
-
-local secHalloween = montarSecaoTower(HalloweenSection, "🎃 HALLOWEEN")
-local secNormal = montarSecaoTower(NormalSection, "⚔️ NORMAL")
-
-local HalloweenTowers = {
-    { name = "Front Yard" },
-    { name = "Foyer" },
-    { name = "Crypt" },
-    { name = "Attic" },
-    { name = "Bell Tower" },
-    { name = "The Abyss" }
-}
-
-local NormalTowers = {
-    { name = "Dragon Tower" },
-    { name = "Cursed Tower" },
-    { name = "Pirate Tower" },
-    { name = "Hidden Leaf Tower" },
-    { name = "Slayer Tower" },
-    { name = "Shadow Tower" }
-}
-
-local function criarBotaoTower(parent, texto, layoutOrder)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -2, 0, 20)
-    btn.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-    btn.Text = ""
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.ZIndex = 2
-    btn.LayoutOrder = layoutOrder
-    btn.Parent = parent
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-    local bs = Instance.new("UIStroke")
-    bs.Thickness = 1
-    bs.Color = STROKE
-    bs.Transparency = 0.5
-    bs.Parent = btn
-
-    local circle = Instance.new("Frame")
-    circle.Size = UDim2.new(0, 9, 0, 9)
-    circle.Position = UDim2.new(0, 5, 0.5, -4.5)
-    circle.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-    circle.BorderSizePixel = 0
-    circle.ZIndex = 3
-    circle.Parent = btn
-    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-    local cStroke = Instance.new("UIStroke")
-    cStroke.Color = STROKE
-    cStroke.Thickness = 1
-    cStroke.Parent = circle
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -16, 1, 0)
-    label.Position = UDim2.new(0, 16, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = texto
-    label.TextColor3 = Color3.fromRGB(180, 90, 90)
-    label.TextSize = 7
-    label.Font = Enum.Font.GothamBold
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextTruncate = Enum.TextTruncate.AtEnd
-    label.ZIndex = 3
-    label.Parent = btn
-
-    return btn, bs, label, circle, cStroke
-end
-
-local function updateTowerVisual(btn, stroke, label, circle, cstr, isOn)
-    if isOn then
-        label.TextColor3 = ACCENT
-        btn.BackgroundColor3 = Color3.fromRGB(35, 15, 0)
-        stroke.Color = ACCENT
-        circle.BackgroundColor3 = ACCENT
-        cstr.Color = ACCENT
-    else
-        label.TextColor3 = Color3.fromRGB(180, 90, 90)
-        btn.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-        stroke.Color = STROKE
-        circle.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-        cstr.Color = STROKE
-    end
-end
-
--- Notificação
-local notifyGui = Instance.new("TextLabel")
-notifyGui.Size = UDim2.new(0, 300, 0, 40)
-notifyGui.Position = UDim2.new(0.5, -150, 0, 80)
-notifyGui.BackgroundColor3 = Color3.fromRGB(20, 10, 0)
-notifyGui.BackgroundTransparency = 0.15
-notifyGui.BorderSizePixel = 0
-notifyGui.Text = ""
-notifyGui.TextColor3 = Color3.fromRGB(255, 200, 0)
-notifyGui.Font = Enum.Font.GothamBold
-notifyGui.TextSize = 12
-notifyGui.TextWrapped = true
-notifyGui.Visible = false
-notifyGui.ZIndex = 100
-notifyGui.Parent = ScreenGui
-Instance.new("UICorner", notifyGui).CornerRadius = UDim.new(0, 6)
-local nStroke = Instance.new("UIStroke")
-nStroke.Color = ACCENT
-nStroke.Thickness = 1
-nStroke.Transparency = 0.3
-nStroke.Parent = notifyGui
-
-local notifyToken = 0
-local function mostrarNotificacao(texto, cor)
-    notifyToken = notifyToken + 1
-    local myToken = notifyToken
-    notifyGui.Text = texto
-    notifyGui.TextColor3 = cor or Color3.fromRGB(255, 200, 0)
-    notifyGui.Visible = true
-    task.delay(2, function()
-        if notifyToken == myToken then notifyGui.Visible = false end
-    end)
-end
-
--- States Tower
-local SelectedTowers = {}
-local SelectedHalloween = {}
-local SelectedNormal = {}
-local HalloweenButtons = {}
-local NormalButtons = {}
-
-local function temHalloweenMarcada()
-    for _, v in pairs(SelectedHalloween) do if v then return true end end
-    return false
-end
-local function temNormalMarcada()
-    for _, v in pairs(SelectedNormal) do if v then return true end end
-    return false
-end
-
-for i, t in ipairs(HalloweenTowers) do
-    local btn, str, lbl, circ, cstr = criarBotaoTower(secHalloween.scroll, t.name, i)
-    HalloweenButtons[t.name] = { btn = btn, str = str, lbl = lbl, circ = circ, cstr = cstr }
-    btn.MouseButton1Click:Connect(function()
-        if SelectedHalloween[t.name] then
-            SelectedHalloween[t.name] = nil
-            SelectedTowers[t.name] = nil
-            updateTowerVisual(btn, str, lbl, circ, cstr, false)
-        else
-            if temNormalMarcada() then
-                mostrarNotificacao("Desmarque as Tower Normal pra ativar Tower Halloween", Color3.fromRGB(255, 100, 100))
-                return
-            end
-            SelectedHalloween[t.name] = true
-            SelectedTowers[t.name] = true
-            updateTowerVisual(btn, str, lbl, circ, cstr, true)
-        end
-    end)
-end
-
-for i, t in ipairs(NormalTowers) do
-    local btn, str, lbl, circ, cstr = criarBotaoTower(secNormal.scroll, t.name, i)
-    NormalButtons[t.name] = { btn = btn, str = str, lbl = lbl, circ = circ, cstr = cstr }
-    btn.MouseButton1Click:Connect(function()
-        if SelectedNormal[t.name] then
-            SelectedNormal[t.name] = nil
-            SelectedTowers[t.name] = nil
-            updateTowerVisual(btn, str, lbl, circ, cstr, false)
-        else
-            if temHalloweenMarcada() then
-                mostrarNotificacao("desmarque as tower de hallowen pra ativar tower normal", Color3.fromRGB(255, 100, 100))
-                return
-            end
-            SelectedNormal[t.name] = true
-            SelectedTowers[t.name] = true
-            updateTowerVisual(btn, str, lbl, circ, cstr, true)
-        end
-    end)
-end
-
-secHalloween.btnSelect.MouseButton1Click:Connect(function()
-    if temNormalMarcada() then
-        mostrarNotificacao("Desmarque as Tower Normal pra ativar Tower Halloween", Color3.fromRGB(255, 100, 100))
-        return
-    end
-    for _, t in ipairs(HalloweenTowers) do
-        SelectedHalloween[t.name] = true
-        SelectedTowers[t.name] = true
-        local b = HalloweenButtons[t.name]
-        if b then updateTowerVisual(b.btn, b.str, b.lbl, b.circ, b.cstr, true) end
-    end
-end)
-secHalloween.btnDeselect.MouseButton1Click:Connect(function()
-    for _, t in ipairs(HalloweenTowers) do
-        SelectedHalloween[t.name] = nil
-        SelectedTowers[t.name] = nil
-        local b = HalloweenButtons[t.name]
-        if b then updateTowerVisual(b.btn, b.str, b.lbl, b.circ, b.cstr, false) end
-    end
-end)
-
-secNormal.btnSelect.MouseButton1Click:Connect(function()
-    if temHalloweenMarcada() then
-        mostrarNotificacao("desmarque as tower de hallowen pra ativar tower normal", Color3.fromRGB(255, 100, 100))
-        return
-    end
-    for _, t in ipairs(NormalTowers) do
-        SelectedNormal[t.name] = true
-        SelectedTowers[t.name] = true
-        local b = NormalButtons[t.name]
-        if b then updateTowerVisual(b.btn, b.str, b.lbl, b.circ, b.cstr, true) end
-    end
-end)
-secNormal.btnDeselect.MouseButton1Click:Connect(function()
-    for _, t in ipairs(NormalTowers) do
-        SelectedNormal[t.name] = nil
-        SelectedTowers[t.name] = nil
-        local b = NormalButtons[t.name]
-        if b then updateTowerVisual(b.btn, b.str, b.lbl, b.circ, b.cstr, false) end
-    end
-end)
-
-local btnAutoRotateTower = Instance.new("TextButton")
-btnAutoRotateTower.Size = UDim2.new(1, -20, 0, 22)
-btnAutoRotateTower.Position = UDim2.new(0, 10, 0, TOGGLE_TOP)
-btnAutoRotateTower.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-btnAutoRotateTower.Text = "AUTO ROTATE: OFF"
-btnAutoRotateTower.TextColor3 = Color3.fromRGB(180, 90, 90)
-btnAutoRotateTower.TextSize = 9
-btnAutoRotateTower.Font = Enum.Font.GothamBold
-btnAutoRotateTower.BorderSizePixel = 0
-btnAutoRotateTower.AutoButtonColor = false
-btnAutoRotateTower.ZIndex = 5
-btnAutoRotateTower.Parent = PageTower
-Instance.new("UICorner", btnAutoRotateTower).CornerRadius = UDim.new(0, 5)
-local barTowerStroke = Instance.new("UIStroke")
-barTowerStroke.Thickness = 1
-barTowerStroke.Color = STROKE
-barTowerStroke.Transparency = 0.5
-barTowerStroke.Parent = btnAutoRotateTower
-
-local isMinimized = false
 minimizeBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
         minimizeBtn.Text = "+"
-        tabQuestsBtn.Visible = false; tabEquipBtn.Visible = false; tabTowerBtn.Visible = false; PageQuests.Visible = false; PageEquip.Visible = false; PageTower.Visible = false; sf.Visible = false; discordContainer.Visible = false; batDeco.Visible = false
-        animateWidth(WIDTH_NORMAL)
-        mainFrame.Size = UDim2.new(0, WIDTH_NORMAL, 0, 28); shadow.Size = UDim2.new(0, WIDTH_NORMAL, 0, 28)
+        tabQuestsBtn.Visible = false; tabEquipBtn.Visible = false; tabTowerBtn.Visible = false; tabRollBtn.Visible = false
+        PageQuests.Visible = false; PageEquip.Visible = false; PageTower.Visible = false; PageRoll.Visible = false
+        sf.Visible = false; discordContainer.Visible = false
+        animateSize(WIDTH_NORMAL, 32); mainFrame.Size = UDim2.new(0,WIDTH_NORMAL,0,32); shadow.Size = UDim2.new(0,WIDTH_NORMAL,0,32)
     else
         minimizeBtn.Text = "-"
-        tabQuestsBtn.Visible = true; tabEquipBtn.Visible = true; tabTowerBtn.Visible = true; sf.Visible = true; discordContainer.Visible = true; batDeco.Visible = true
-        mainFrame.Size = UDim2.new(0, mainFrame.Size.X.Offset, 0, 265)
-        shadow.Size = UDim2.new(0, mainFrame.Size.X.Offset, 0, 265)
-        if tabQuestsBtn.TextColor3 == ACCENT then
-            PageQuests.Visible = true
-            animateWidth(WIDTH_NORMAL)
-        elseif tabEquipBtn.TextColor3 == ACCENT then
-            PageEquip.Visible = true
-            animateWidth(WIDTH_EXPANDED)
-        else
-            PageTower.Visible = true
-            animateWidth(WIDTH_EXPANDED)
-        end
+        tabQuestsBtn.Visible = true; tabEquipBtn.Visible = true; tabTowerBtn.Visible = true; tabRollBtn.Visible = true
+        sf.Visible = true; discordContainer.Visible = true
+        if tabQuestsBtn.TextColor3 == ACCENT then PageQuests.Visible = true; animateSize(WIDTH_NORMAL, HEIGHT_QUESTS)
+        elseif tabEquipBtn.TextColor3 == ACCENT then PageEquip.Visible = true; animateSize(WIDTH_EXPANDED, HEIGHT_TABS)
+        elseif tabTowerBtn.TextColor3 == ACCENT then PageTower.Visible = true; animateSize(WIDTH_EXPANDED, HEIGHT_TABS)
+        else PageRoll.Visible = true; animateSize(WIDTH_EXPANDED, HEIGHT_TABS) end
     end
 end)
 
-local function setStatus(text, color)
-    statusLabel.Text = text
-    statusLabel.TextColor3 = color or Color3.fromRGB(120, 120, 125)
+local function criarBotaoQuest(texto, posY)
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(1,-16,0,26); b.Position = UDim2.new(0,8,0,posY); b.BackgroundColor3 = ITEM_BG; b.TextColor3 = TEXT_COLOR; b.Text = texto; b.TextSize = 10; b.Font = Enum.Font.GothamBold; b.BorderSizePixel = 0; b.AutoButtonColor = false; b.ZIndex = 2; b.Parent = PageQuests
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    local s = Instance.new("UIStroke"); s.Thickness = 1; s.Color = STROKE; s.Transparency = 0.3; s.Parent = b
+    return b, s
 end
+local BtnDoors, StrDoors = criarBotaoQuest("🚪 AUTO TP DOORS", 0)
+local BtnComplete, StrComplete = criarBotaoQuest("📜 AUTO COMPLETE", 30)
+local BtnClaim, StrClaim = criarBotaoQuest("🏆 AUTO CLAIM", 60)
+local BtnRollP, StrRollP = criarBotaoQuest("🎃 AUTO ROLL PUMPKIN DICE", 90)
+local BtnPotion, StrPotion = criarBotaoQuest("🧪 AUTO USE POTION", 120)
 
-local function updateVisual(isOn, btn, stroke)
-    if isOn then
-        btn.TextColor3 = ACCENT; btn.BackgroundColor3 = Color3.fromRGB(35, 15, 0); stroke.Color = ACCENT
-    else
-        btn.TextColor3 = Color3.fromRGB(180, 90, 90); btn.BackgroundColor3 = Color3.fromRGB(32, 16, 16); stroke.Color = STROKE
-    end
-end
+local function setStatus(text, color) statusLabel.Text = text; statusLabel.TextColor3 = color or ACCENT end
+local function updateVisual(isOn, btn, stroke) if isOn then btn.TextColor3 = ACCENT; btn.BackgroundColor3 = HEADER_BG; stroke.Color = ACCENT else btn.TextColor3 = TEXT_COLOR; btn.BackgroundColor3 = ITEM_BG; stroke.Color = STROKE end end
 
+-- ================== LÓGICA QUESTS ==================
 local Manual = { Doors = false, PumpkinRoll = false, NormalRoll = false, Potion = false }
 local States = { Doors = false, PumpkinRoll = false, NormalRoll = false, Potion = false }
-
 local function SetDoors(state, isManual) States.Doors = state; if isManual then Manual.Doors = state end; updateVisual(state, BtnDoors, StrDoors) end
-local function SetPumpkinRoll(state, isManual) States.PumpkinRoll = state; if isManual then Manual.PumpkinRoll = state end; updateVisual(state, BtnRoll, StrRoll) end
+local function SetPumpkinRoll(state, isManual) States.PumpkinRoll = state; if isManual then Manual.PumpkinRoll = state end; updateVisual(state, BtnRollP, StrRollP) end
 local function SetPotion(state, isManual) States.Potion = state; if isManual then Manual.Potion = state end; updateVisual(state, BtnPotion, StrPotion) end
 
-local function LoopDoors()
-    task.spawn(function()
-        while States.Doors do
-            local HalloweenFolder = workspace:FindFirstChild("Halloween")
-            local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-            local hrp = character:FindFirstChild("HumanoidRootPart")
-            local humanoid = character:FindFirstChild("Humanoid")
-
-            if HalloweenFolder and hrp and humanoid and humanoid.Health > 0 then
-                for _, casa in ipairs(HalloweenFolder:GetChildren()) do
-                    if not States.Doors then break end
-                    if string.find(casa.Name, "HouseForTrickOrTreating") then
-                        local door = casa:FindFirstChild("DoorOpener")
-                        if door then
-                            pcall(function()
-                                hrp.CFrame = door:GetPivot()
-                                hrp.AssemblyLinearVelocity = Vector3.zero
-                                hrp.AssemblyAngularVelocity = Vector3.zero
-                            end)
-                            task.wait(0.1)
-                        end
-                    end
-                end
-            else task.wait(0.5) end
-        end
-    end)
-end
-
-local function LoopPumpkinRoll()
-    task.spawn(function()
-        local pumpkinService = ReplicatedStorage:WaitForChild("Network"):WaitForChild("PumpkinDiceService", 5)
-        local rollRemote = pumpkinService and pumpkinService:WaitForChild("RF", 5):WaitForChild("Roll", 5)
-        while States.PumpkinRoll do
-            if rollRemote then pcall(function() rollRemote:InvokeServer(5) end) end
-            task.wait(0.1)
-        end
-    end)
-end
-
-local function LoopNormalRoll()
-    task.spawn(function()
-        local rollRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("RollService", 5)
-        local rf = rollRemote and rollRemote:FindFirstChild("RF", 5)
-        local event = rf and rf:FindFirstChild("RollDice", 5)
-        while States.NormalRoll do
-            if event then pcall(function() event:InvokeServer() end) end
-            task.wait(0.15)
-        end
-    end)
-end
-
-local function LoopPotion()
-    task.spawn(function()
-        local boostService = ReplicatedStorage:WaitForChild("Network"):WaitForChild("BoostService", 5)
-        local useRemote = boostService and boostService:WaitForChild("RE", 5):WaitForChild("Use", 5)
-        while States.Potion do
-            if useRemote then
-                pcall(function()
-                    useRemote:FireServer("Pumpkin Pot II")
-                    useRemote:FireServer("Pumpkin Pot III")
-                    useRemote:FireServer("Candy Pot II")
-                    useRemote:FireServer("Candy Pot III")
-                end)
-            end
-            task.wait(0.5)
-        end
-    end)
-end
+local function LoopDoors() task.spawn(function() while States.Doors do task.wait(0.1); local allSigns = findAllSigns(); local availableTargets = {}; for _, data in ipairs(allSigns) do if string.lower(data.titleLabel.Text):find("trick or treat") then table.insert(availableTargets, data) end end; local char = LocalPlayer.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart"); if hrp and tick() - lastTeleportTime > TEMPO_ENTRE_CASAS then if #availableTargets > 0 then local targetToGo = nil; for _, data in ipairs(availableTargets) do if not visitedRound[data.titleLabel] then targetToGo = data; break end end; if not targetToGo then visitedRound = {}; targetToGo = availableTargets[1] end; if targetToGo then local signPos = getSignPosition(targetToGo.attachment); if signPos then local targetCoord = getClosestFixedCoord(signPos); if targetCoord then teleportToCoord(targetCoord); visitedRound[targetToGo.titleLabel] = true; lastTeleportTime = tick() end end end else visitedRound = {} end end end end end) end
+local function LoopPumpkinRoll() task.spawn(function() local ps = ReplicatedStorage:WaitForChild("Network"):WaitForChild("PumpkinDiceService", 5); local rr = ps and ps:WaitForChild("RF", 5):WaitForChild("Roll", 5); while States.PumpkinRoll do if rr then pcall(function() rr:InvokeServer(5) end) end; task.wait(0.1) end end) end
+local function LoopNormalRoll() task.spawn(function() local rs = ReplicatedStorage:WaitForChild("Network"):WaitForChild("RollService", 5); local rf = rs and rs:FindFirstChild("RF", 5); local event = rf and rf:FindFirstChild("RollDice", 5); while States.NormalRoll do if event then pcall(function() event:InvokeServer() end) end; task.wait(0.15) end end) end
+local function LoopPotion() task.spawn(function() local bs = ReplicatedStorage:WaitForChild("Network"):WaitForChild("BoostService", 5); local ur = bs and bs:WaitForChild("RE", 5):WaitForChild("Use", 5); while States.Potion do if ur then pcall(function() ur:FireServer("Pumpkin Pot II"); ur:FireServer("Pumpkin Pot III"); ur:FireServer("Candy Pot II"); ur:FireServer("Candy Pot III") end) end; task.wait(0.5) end end) end
 
 local isCompleteEnabled = false
 local isClaimEnabled = false
@@ -1162,102 +419,65 @@ local function dispararRemoteClaim(tipo, categoria, nomePasta)
     local Remote = ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("HalloweenQuestService") and ReplicatedStorage.Network.HalloweenQuestService:FindFirstChild("RE") and ReplicatedStorage.Network.HalloweenQuestService.RE:FindFirstChild("Claim")
     if Remote then
         local catSingular = string.gsub(categoria, "s$", "")
-        if catSingular ~= categoria then
-            setStatus("Claim: " .. nomePasta .. " (P/S)", Color3.fromRGB(0, 255, 0))
-            pcall(function() Remote:FireServer(tipo, categoria) end)
-            pcall(function() Remote:FireServer(tipo, catSingular) end)
-        else
-            setStatus("Claim: " .. nomePasta, Color3.fromRGB(0, 255, 0))
-            pcall(function() Remote:FireServer(tipo, categoria) end)
-        end
+        if catSingular ~= categoria then pcall(function() Remote:FireServer(tipo, categoria); Remote:FireServer(tipo, catSingular) end) else pcall(function() Remote:FireServer(tipo, categoria) end) end
     end
 end
 
-local TraduzirMissao = {
-    ["DailyDoors"] = {"Daily", "Doors"}, ["DailyFloors"] = {"Daily", "Floors"},
-    ["DailyPotion"] = {"Daily", "Potion"}, ["DailyRolls"] = {"Daily", "Rolls"},
-    ["HourlyFloors"] = {"Hourly", "Floors"}, ["HourlyPotion"] = {"Hourly", "Potion"},
-    ["HourlyPumpkinRolls"] = {"Hourly", "PumpkinRolls"}, ["HourlyDice"] = {"Hourly", "Dice"},
-    ["DailyDice"] = {"Daily", "Dice"}, ["HourlyDoors"] = {"Hourly", "Doors"}
-}
+local TraduzirMissao = { ["DailyDoors"] = {"Daily","Doors"}, ["DailyFloors"] = {"Daily","Floors"}, ["DailyPotion"] = {"Daily","Potion"}, ["DailyRolls"] = {"Daily","Rolls"}, ["HourlyFloors"] = {"Hourly","Floors"}, ["HourlyPotion"] = {"Hourly","Potion"}, ["HourlyPumpkinRolls"] = {"Hourly","PumpkinRolls"}, ["HourlyDice"] = {"Hourly","Dice"}, ["DailyDice"] = {"Daily","Dice"}, ["HourlyDoors"] = {"Hourly","Doors"} }
 
 local function AvaliarScrollingFrame(scroll)
     if not isCompleteEnabled and not isClaimEnabled then return end
-    local precisaDoor, precisaPumpkin, precisaNormal, precisaPot = false, false, false, false
-    for _, missaoFrame in ipairs(scroll:GetChildren()) do
-        if missaoFrame:IsA("Frame") then
-            local nomePasta = missaoFrame.Name
-            local questGoal = missaoFrame:FindFirstChild("QuestGoal")
-            local buttonsFolder = missaoFrame:FindFirstChild("Buttons")
-            local botaoClaim = buttonsFolder and buttonsFolder:FindFirstChild("Claim")
-            if botaoClaim then
-                local infoFrame = botaoClaim:FindFirstChild("Frame") and botaoClaim.Frame:FindFirstChild("Info")
-                local textoBotao = infoFrame and infoFrame:FindFirstChild("TextLabel") and infoFrame.TextLabel.Text
-                local isClaimedText = (textoBotao == "Claimed")
-
-                if isClaimEnabled and botaoClaim.GuiState == Enum.GuiState.Idle then
-                    if not isClaimedText and not botaoClaim:GetAttribute("AutoClaimed") then
-                        botaoClaim:SetAttribute("AutoClaimed", true)
-                        local tipo, categoria = string.match(nomePasta, "^(Daily)") or string.match(nomePasta, "^(Hourly)"), string.gsub(nomePasta, "^(Daily)", ""):gsub("^(Hourly)", "")
-                        if TraduzirMissao[nomePasta] then tipo = TraduzirMissao[nomePasta][1]; categoria = TraduzirMissao[nomePasta][2] end
-                        if tipo and categoria then dispararRemoteClaim(tipo, categoria, nomePasta) end
-                    end
+    local pD, pP, pN, pPot = false, false, false, false
+    for _, mf in ipairs(scroll:GetChildren()) do
+        if mf:IsA("Frame") then
+            local np = mf.Name; local qg = mf:FindFirstChild("QuestGoal"); local bf = mf:FindFirstChild("Buttons"); local bc = bf and bf:FindFirstChild("Claim")
+            if bc then
+                local inf = bc:FindFirstChild("Frame") and bc.Frame:FindFirstChild("Info"); local txt = inf and inf:FindFirstChild("TextLabel") and inf.TextLabel.Text; local isClaimed = (txt == "Claimed")
+                if isClaimEnabled and bc.GuiState == Enum.GuiState.Idle and not isClaimed and not bc:GetAttribute("AutoClaimed") then
+                    bc:SetAttribute("AutoClaimed", true)
+                    local tipo, categoria = string.match(np, "^(Daily)") or string.match(np, "^(Hourly)"), string.gsub(np, "^(Daily)", ""):gsub("^(Hourly)", "")
+                    if TraduzirMissao[np] then tipo = TraduzirMissao[np][1]; categoria = TraduzirMissao[np][2] end
+                    if tipo and categoria then dispararRemoteClaim(tipo, categoria, np) end
                 end
-                if isCompleteEnabled and botaoClaim.GuiState == Enum.GuiState.NonInteractable and textoBotao == "Claim" then
-                    if questGoal and questGoal:IsA("TextLabel") and questGoal.Text ~= "" then
-                        local txt = string.lower(questGoal.Text)
-                        if string.find(txt, "door") then precisaDoor = true
-                        elseif string.find(txt, "pumpkin") then precisaPumpkin = true
-                        elseif string.find(txt, "roll") or string.find(txt, "dice") then precisaNormal = true
-                        elseif string.find(txt, "drink") or string.find(txt, "potion") then precisaPot = true
-                        end
-                    end
+                if isCompleteEnabled and bc.GuiState == Enum.GuiState.NonInteractable and txt == "Claim" and qg and qg:IsA("TextLabel") and qg.Text ~= "" then
+                    local t = string.lower(qg.Text)
+                    if string.find(t, "door") then pD = true elseif string.find(t, "pumpkin") then pP = true elseif string.find(t, "roll") or string.find(t, "dice") then pN = true elseif string.find(t, "drink") or string.find(t, "potion") then pPot = true end
                 end
             end
         end
     end
     if isCompleteEnabled then
-        if precisaDoor and not States.Doors then SetDoors(true, false); LoopDoors() elseif not precisaDoor and States.Doors and not Manual.Doors then SetDoors(false, false) end
-        if precisaPumpkin and not States.PumpkinRoll then SetPumpkinRoll(true, false); LoopPumpkinRoll() elseif not precisaPumpkin and States.PumpkinRoll and not Manual.PumpkinRoll then SetPumpkinRoll(false, false) end
-        if precisaNormal and not States.NormalRoll then States.NormalRoll = true; LoopNormalRoll() elseif not precisaNormal and States.NormalRoll and not Manual.NormalRoll then States.NormalRoll = false end
-        if precisaPot and not States.Potion then SetPotion(true, false); LoopPotion() elseif not precisaPot and States.Potion and not Manual.Potion then SetPotion(false, false) end
-    endend
+        if pD and not States.Doors then SetDoors(true, false); LoopDoors() elseif not pD and States.Doors and not Manual.Doors then SetDoors(false, false) end
+        if pP and not States.PumpkinRoll then SetPumpkinRoll(true, false); LoopPumpkinRoll() elseif not pP and States.PumpkinRoll and not Manual.PumpkinRoll then SetPumpkinRoll(false, false) end
+        if pN and not States.NormalRoll then States.NormalRoll = true; LoopNormalRoll() elseif not pN and States.NormalRoll and not Manual.NormalRoll then States.NormalRoll = false end
+        if pPot and not States.Potion then SetPotion(true, false); LoopPotion() elseif not pPot and States.Potion and not Manual.Potion then SetPotion(false, false) end
+    end
+end
 
 local function startSmartQuest()
     task.spawn(function()
         pcall(function()
             local pGui = LocalPlayer:WaitForChild("PlayerGui", 10)
             if not pGui then return end
-            local hwQuests = pGui.Root.Menus.HalloweenQuests
-            local questsFolder = hwQuests:WaitForChild("Quests", 10)
-            local scrollingFrame = questsFolder and questsFolder:WaitForChild("ScrollingFrame", 5)
-            if not scrollingFrame then return end
-            scrollingFrame.ChildAdded:Connect(function() task.wait(0.5); AvaliarScrollingFrame(scrollingFrame) end)
-            scrollingFrame.ChildRemoved:Connect(function() task.wait(0.5); AvaliarScrollingFrame(scrollingFrame) end)
-            AvaliarScrollingFrame(scrollingFrame)
-            task.spawn(function()
-                while isCompleteEnabled or isClaimEnabled do
-                    task.wait(1)
-                    if scrollingFrame and scrollingFrame.Parent then AvaliarScrollingFrame(scrollingFrame) end
-                end
-            end)
+            local hw = pGui.Root.Menus.HalloweenQuests
+            local qf = hw:WaitForChild("Quests", 10)
+            local sf = qf and qf:WaitForChild("ScrollingFrame", 5)
+            if not sf then return end
+            sf.ChildAdded:Connect(function() task.wait(0.5); AvaliarScrollingFrame(sf) end)
+            sf.ChildRemoved:Connect(function() task.wait(0.5); AvaliarScrollingFrame(sf) end)
+            AvaliarScrollingFrame(sf)
+            task.spawn(function() while isCompleteEnabled or isClaimEnabled do task.wait(1); if sf and sf.Parent then AvaliarScrollingFrame(sf) end end end)
         end)
     end)
 end
 
 BtnDoors.MouseButton1Click:Connect(function() SetDoors(not States.Doors, true); if States.Doors then LoopDoors() else setStatus("Auto Door: OFF") end end)
-BtnRoll.MouseButton1Click:Connect(function() SetPumpkinRoll(not States.PumpkinRoll, true); if States.PumpkinRoll then LoopPumpkinRoll() else setStatus("Pumpkin Dice: OFF") end end)
+BtnRollP.MouseButton1Click:Connect(function() SetPumpkinRoll(not States.PumpkinRoll, true); if States.PumpkinRoll then LoopPumpkinRoll() else setStatus("Pumpkin Dice: OFF") end end)
 BtnPotion.MouseButton1Click:Connect(function() SetPotion(not States.Potion, true); if States.Potion then LoopPotion() else setStatus("Auto Potion: OFF") end end)
-
-BtnClaim.MouseButton1Click:Connect(function()
-    isClaimEnabled = not isClaimEnabled; updateVisual(isClaimEnabled, BtnClaim, StrClaim)
-    if isClaimEnabled then startSmartQuest() end
-end)
-
+BtnClaim.MouseButton1Click:Connect(function() isClaimEnabled = not isClaimEnabled; updateVisual(isClaimEnabled, BtnClaim, StrClaim); if isClaimEnabled then startSmartQuest() end end)
 BtnComplete.MouseButton1Click:Connect(function()
     isCompleteEnabled = not isCompleteEnabled; updateVisual(isCompleteEnabled, BtnComplete, StrComplete)
-    if isCompleteEnabled then startSmartQuest()
-    else
+    if isCompleteEnabled then startSmartQuest() else
         if States.Doors and not Manual.Doors then SetDoors(false, false) end
         if States.PumpkinRoll and not Manual.PumpkinRoll then SetPumpkinRoll(false, false) end
         if States.NormalRoll and not Manual.NormalRoll then States.NormalRoll = false end
@@ -1265,195 +485,87 @@ BtnComplete.MouseButton1Click:Connect(function()
     end
 end)
 
--- ==========================================
--- MONITORAMENTO HAUNTED NIGHT + POÇÃO
--- ==========================================
-local buffMonitorConnection = nil
+-- ================== ABA EQUIP ==================
+local EQ_COL_GAP = 4
+local EQ_COL_WIDTH = (WIDTH_EXPANDED - 16 - EQ_COL_GAP) / 2
+local EQ_SCROLL_H = 78
+local EQ_SELECT_H = 16
+local EQ_SCROLL_TOP = 16
+local EQ_SELECT_TOP = EQ_SCROLL_TOP + EQ_SCROLL_H + 3
+local EQ_TOGGLE_TOP = EQ_SELECT_TOP + EQ_SELECT_H + 4
 
-local function checkHauntedPotion()
-    if not workspace:FindFirstChild("Haunted Night") then return end
+local LockSection = Instance.new("Frame"); LockSection.Size = UDim2.new(0,EQ_COL_WIDTH,0,150); LockSection.Position = UDim2.new(0,8,0,0); LockSection.BackgroundTransparency = 1; LockSection.Parent = PageEquip
+local EquipSection = Instance.new("Frame"); EquipSection.Size = UDim2.new(0,EQ_COL_WIDTH,0,150); EquipSection.Position = UDim2.new(0,8 + EQ_COL_WIDTH + EQ_COL_GAP,0,0); EquipSection.BackgroundTransparency = 1; EquipSection.Parent = PageEquip
 
-    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pGui then return end
-    local root = pGui:FindFirstChild("Root")
-    if not root then return end
-    local hud = root:FindFirstChild("HUD")
-    if not hud then return end
-    local buffBar = hud:FindFirstChild("BuffBar")
-    if not buffBar then return end
-
-    local buffAtivo = buffBar:FindFirstChild("Boost_Haunted Potion")
-
-    if not buffAtivo then
-        local boostService = ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("BoostService")
-        if boostService then
-            local useRemote = boostService:FindFirstChild("RE") and boostService.RE:FindFirstChild("Use")
-            if useRemote then
-                pcall(function() useRemote:FireServer("Haunted Potion") end)
-                setStatus("🧪 Poção Haunted Usada!", Color3.fromRGB(200, 100, 200))
-            end
-        end
-
-        if not buffMonitorConnection then
-            buffMonitorConnection = buffBar.ChildRemoved:Connect(function(child)
-                if child.Name == "Boost_Haunted Potion" then
-                    task.wait(0.5)
-                    checkHauntedPotion()
-                end
-            end)
-        end
-    end
+local function montarSecaoEquip(parent, titulo)
+    local tl = Instance.new("TextLabel"); tl.Size = UDim2.new(1,0,0,14); tl.Position = UDim2.new(0,2,0,0); tl.BackgroundTransparency = 1; tl.Text = titulo; tl.TextColor3 = ACCENT; tl.Font = Enum.Font.GothamBold; tl.TextSize = 8; tl.TextXAlignment = Enum.TextXAlignment.Left; tl.ZIndex = 3; tl.Parent = parent
+    local s = Instance.new("ScrollingFrame"); s.Size = UDim2.new(1,-4,0,EQ_SCROLL_H); s.Position = UDim2.new(0,2,0,EQ_SCROLL_TOP); s.BackgroundColor3 = Color3.fromRGB(15,15,20); s.BorderSizePixel = 0; s.ScrollBarThickness = 2; s.ScrollBarImageColor3 = ACCENT; s.CanvasSize = UDim2.new(0,0,0,0); s.AutomaticCanvasSize = Enum.AutomaticSize.Y; s.Parent = parent; Instance.new("UICorner", s).CornerRadius = UDim.new(0,5)
+    local l = Instance.new("UIListLayout"); l.SortOrder = Enum.SortOrder.LayoutOrder; l.Padding = UDim.new(0,1); l.Parent = s
+    local p = Instance.new("UIPadding"); p.PaddingTop = UDim.new(0,2); p.PaddingLeft = UDim.new(0,2); p.PaddingBottom = UDim.new(0,2); p.Parent = s
+    return s
 end
 
-local function ProcessarHauntedNight()
-    if workspace:FindFirstChild("Haunted Night") then
-        if not States.PumpkinRoll then
-            SetPumpkinRoll(true, true)
-        end
-        task.spawn(function()
-            LoopPumpkinRoll()
-        end)
-        setStatus("🎃 Haunted Night Detectado! Auto Roll ON.", ACCENT)
-        checkHauntedPotion()
-    else
-        if States.PumpkinRoll and not Manual.PumpkinRoll then
-            SetPumpkinRoll(false, false)
-            setStatus("⏸️ Haunted Night Sumiu.", Color3.fromRGB(120, 120, 120))
-        end
-        if buffMonitorConnection then
-            buffMonitorConnection:Disconnect()
-            buffMonitorConnection = nil
-        end
-    end
+local lockScroll = montarSecaoEquip(LockSection, "🔒 LOCK")
+local equipScroll = montarSecaoEquip(EquipSection, "⚡ EQUIP")
+
+local function criarBotaoQuirk(parent, texto, layoutOrder)
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(1,-2,0,20); b.BackgroundColor3 = Color3.fromRGB(32,16,16); b.Text = ""; b.BorderSizePixel = 0; b.AutoButtonColor = false; b.ZIndex = 2; b.LayoutOrder = layoutOrder; b.Parent = parent; Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    local s = Instance.new("UIStroke"); s.Thickness = 1; s.Color = STROKE; s.Transparency = 0.5; s.Parent = b
+    local c = Instance.new("Frame"); c.Size = UDim2.new(0,9,0,9); c.Position = UDim2.new(0,5,0.5,-4.5); c.BackgroundColor3 = Color3.fromRGB(15,15,20); c.BorderSizePixel = 0; c.ZIndex = 3; c.Parent = b; Instance.new("UICorner", c).CornerRadius = UDim.new(1,0)
+    local cs = Instance.new("UIStroke"); cs.Color = STROKE; cs.Thickness = 1; cs.Parent = c
+    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1,-16,1,0); l.Position = UDim2.new(0,16,0,0); l.BackgroundTransparency = 1; l.Text = texto; l.TextColor3 = Color3.fromRGB(180,90,90); l.TextSize = 7; l.Font = Enum.Font.GothamBold; l.TextXAlignment = Enum.TextXAlignment.Left; l.TextTruncate = Enum.TextTruncate.AtEnd; l.ZIndex = 3; l.Parent = b
+    return b, s, l, c, cs
 end
 
-workspace.ChildAdded:Connect(function(child)
-    if child.Name == "Haunted Night" then
-        ProcessarHauntedNight()
-    end
-end)
-
-workspace.ChildRemoved:Connect(function(child)
-    if child.Name == "Haunted Night" then
-        ProcessarHauntedNight()
-    end
-end)
-
-task.spawn(function()
-    task.wait(1)
-    ProcessarHauntedNight()
-end)
-
--- ==========================================
--- LÓGICA DO AUTO TOWER
--- ==========================================
-local rotacaoTowerIndex = 0
-local function getListaTowersSelecionadas()
-    local lista = {}
-    for _, t in ipairs(HalloweenTowers) do if SelectedTowers[t.name] then table.insert(lista, t.name) end end
-    for _, t in ipairs(NormalTowers) do if SelectedTowers[t.name] then table.insert(lista, t.name) end end
-    return lista
+local function updateQuirkVisual(b, s, l, c, cs, isOn)
+    if isOn then l.TextColor3 = ACCENT; b.BackgroundColor3 = Color3.fromRGB(35,15,0); s.Color = ACCENT; c.BackgroundColor3 = ACCENT; cs.Color = ACCENT
+    else l.TextColor3 = Color3.fromRGB(180,90,90); b.BackgroundColor3 = Color3.fromRGB(32,16,16); s.Color = STROKE; c.BackgroundColor3 = Color3.fromRGB(15,15,20); cs.Color = STROKE end
 end
 
-btnAutoRotateTower.MouseButton1Click:Connect(function()
-    if isAutoRotateTowerRunning then
-        isAutoRotateTowerRunning = false
-        btnAutoRotateTower.Text = "AUTO ROTATE: OFF"
-        btnAutoRotateTower.TextColor3 = Color3.fromRGB(180, 90, 90)
-        btnAutoRotateTower.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-        barTowerStroke.Color = STROKE
-        setStatus("Auto Tower Desligado.", Color3.fromRGB(120, 120, 120))
-        if cancelTowerRF then pcall(function() cancelTowerRF:InvokeServer() end) end
-        return
-    end
+local QUIRKS = {"Fortune's Favor", "Midas Touch", "Prodigy"}
+local SelectedLocks = {}
+local SelectedEquip = nil
+local LockButtons = {}
+local EquipButtons = {}
 
-    isAutoRotateTowerRunning = true
-    btnAutoRotateTower.Text = "AUTO ROTATE: ON"
-    btnAutoRotateTower.TextColor3 = ACCENT
-    btnAutoRotateTower.BackgroundColor3 = Color3.fromRGB(35, 15, 0)
-    barTowerStroke.Color = ACCENT
+for i, q in ipairs(QUIRKS) do
+    local b, s, l, c, cs = criarBotaoQuirk(lockScroll, q, i); LockButtons[q] = { btn = b, str = s, lbl = l, circ = c, cstr = cs }
+    b.MouseButton1Click:Connect(function() if SelectedLocks[q] then SelectedLocks[q] = nil; updateQuirkVisual(b, s, l, c, cs, false) else SelectedLocks[q] = true; updateQuirkVisual(b, s, l, c, cs, true) end end)
+end
 
-    task.spawn(function()
-        while isAutoRotateTowerRunning do
-            local lista = getListaTowersSelecionadas()
-            if #lista == 0 then
-                setStatus("Nenhuma Tower selecionada!", Color3.fromRGB(255, 50, 50))
-                task.wait(2); continue
-            end
-
-            rotacaoTowerIndex = (rotacaoTowerIndex % #lista) + 1
-            local currentTower = lista[rotacaoTowerIndex]
-
-            if not completeTowerRF or not cancelTowerRF then
-                setStatus("❌ Erro nos Remotes da Tower.", Color3.fromRGB(255, 50, 50))
-                isAutoRotateTowerRunning = false; break
-            end
-
-            local playTowerRF = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Towers"):WaitForChild("RF"):WaitForChild("PlayTower")
-
-            setStatus("🏰 Entrando: " .. currentTower, ACCENT)
-            local entrou = false
-            local tentativas = 0
-
-            while isAutoRotateTowerRunning and not entrou and tentativas < 10 do
-                tentativas = tentativas + 1
-                pcall(function() entrou = (playTowerRF:InvokeServer(currentTower) == true) end)
-                if not entrou then
-                    setStatus("⏳ Recusado " .. tentativas .. "/10: " .. currentTower, Color3.fromRGB(255, 200, 0))
-                    task.wait(1)
-                end
-            end
-
-            if not entrou then
-                setStatus("❌ Bloqueada: " .. currentTower, Color3.fromRGB(255, 50, 50))
-                task.wait(2); continue
-            end
-
-            task.wait(2)
-            setStatus("⚔️ Lutando: " .. currentTower, Color3.fromRGB(255, 200, 0))
-
-            torreFinalizada = false
-            ultimoFloor = 0
-            achouAndar = false
-
-            while isAutoRotateTowerRunning and not torreFinalizada do
-                pcall(function() completeTowerRF:InvokeServer() end)
-                if achouAndar then
-                    achouAndar = false
-                    setStatus("🏆 Floor " .. ultimoFloor, Color3.fromRGB(0, 255, 0))
-                end
-                task.wait(1.5)
-            end
-
-            if isAutoRotateTowerRunning then
-                setStatus("🏁 Torre finalizada...", Color3.fromRGB(255, 200, 0))
-                pcall(function() cancelTowerRF:InvokeServer() end)
-                task.wait(1)
-            end
-        end
+for i, q in ipairs(QUIRKS) do
+    local b, s, l, c, cs = criarBotaoQuirk(equipScroll, q, i); EquipButtons[q] = { btn = b, str = s, lbl = l, circ = c, cstr = cs }
+    b.MouseButton1Click:Connect(function()
+        if SelectedEquip == q then SelectedEquip = nil; updateQuirkVisual(b, s, l, c, cs, false)
+        else SelectedEquip = q; for _, q2 in ipairs(QUIRKS) do local btnData = EquipButtons[q2]; if btnData then updateQuirkVisual(btnData.btn, btnData.str, btnData.lbl, btnData.circ, btnData.cstr, q2 == q) end end end
     end)
-end)
+end
 
--- ==========================================
--- LÓGICA DO AUTO EQUIP (DIREITA)
--- ==========================================
+local btnLock = Instance.new("TextButton"); btnLock.Size = UDim2.new(1,-20,0,20); btnLock.Position = UDim2.new(0,10,0,EQ_TOGGLE_TOP); btnLock.BackgroundColor3 = Color3.fromRGB(32,16,16); btnLock.Text = "LOCK SELECTED"; btnLock.TextColor3 = Color3.fromRGB(180,90,90); btnLock.TextSize = 9; btnLock.Font = Enum.Font.GothamBold; btnLock.BorderSizePixel = 0; btnLock.AutoButtonColor = false; btnLock.ZIndex = 5; btnLock.Parent = LockSection; Instance.new("UICorner", btnLock).CornerRadius = UDim.new(0,5)
+local barLockStroke = Instance.new("UIStroke"); barLockStroke.Thickness = 1; barLockStroke.Color = STROKE; barLockStroke.Transparency = 0.5; barLockStroke.Parent = btnLock
+local btnUnlockAll = Instance.new("TextButton"); btnUnlockAll.Size = UDim2.new(1,-20,0,20); btnUnlockAll.Position = UDim2.new(0,10,0,EQ_TOGGLE_TOP + 24); btnUnlockAll.BackgroundColor3 = Color3.fromRGB(32,16,16); btnUnlockAll.Text = "UNLOCK ALL"; btnUnlockAll.TextColor3 = Color3.fromRGB(180,90,90); btnUnlockAll.TextSize = 9; btnUnlockAll.Font = Enum.Font.GothamBold; btnUnlockAll.BorderSizePixel = 0; btnUnlockAll.AutoButtonColor = false; btnUnlockAll.ZIndex = 5; btnUnlockAll.Parent = LockSection; Instance.new("UICorner", btnUnlockAll).CornerRadius = UDim.new(0,5)
+local barUnlockStroke = Instance.new("UIStroke"); barUnlockStroke.Thickness = 1; barUnlockStroke.Color = STROKE; barUnlockStroke.Transparency = 0.5; barUnlockStroke.Parent = btnUnlockAll
+local btnAutoEquip = Instance.new("TextButton"); btnAutoEquip.Size = UDim2.new(1,-20,0,22); btnAutoEquip.Position = UDim2.new(0,10,0,EQ_TOGGLE_TOP); btnAutoEquip.BackgroundColor3 = Color3.fromRGB(32,16,16); btnAutoEquip.Text = "AUTO EQUIP: OFF"; btnAutoEquip.TextColor3 = Color3.fromRGB(180,90,90); btnAutoEquip.TextSize = 9; btnAutoEquip.Font = Enum.Font.GothamBold; btnAutoEquip.BorderSizePixel = 0; btnAutoEquip.AutoButtonColor = false; btnAutoEquip.ZIndex = 5; btnAutoEquip.Parent = EquipSection; Instance.new("UICorner", btnAutoEquip).CornerRadius = UDim.new(0,5)
+local barEquipStroke = Instance.new("UIStroke"); barEquipStroke.Thickness = 1; barEquipStroke.Color = STROKE; barEquipStroke.Transparency = 0.5; barEquipStroke.Parent = btnAutoEquip
+
+local function SetEquipVisual(isOn)
+    if isOn then btnAutoEquip.Text = "AUTO EQUIP: ON"; btnAutoEquip.TextColor3 = ACCENT; btnAutoEquip.BackgroundColor3 = Color3.fromRGB(35,15,0); barEquipStroke.Color = ACCENT
+    else btnAutoEquip.Text = "AUTO EQUIP: OFF"; btnAutoEquip.TextColor3 = Color3.fromRGB(180,90,90); btnAutoEquip.BackgroundColor3 = Color3.fromRGB(32,16,16); barEquipStroke.Color = STROKE end
+end
+
 local function IniciarAutoEquip(quirkEscolhida)
     local maxSlots = GetMaxSlots()
-    if not MatrizSalva then
-        setStatus("❌ Matriz vazia! Aguarde carregar e clique de novo.", Color3.fromRGB(255, 50, 50))
-        return
-    end
-
+    if not MatrizSalva then setStatus("❌ Matriz vazia! Aguarde carregar e clique de novo.", Color3.fromRGB(255,50,50)); return end
     local uuidsUsados = {}
     local slotAtual = 1
     local EquipEvent = ReplicatedStorage.Network.UnitService.RF.Equip
     local InteractSlotEvent = ReplicatedStorage.Network.PlotService.RE.InteractSlot
-
     while slotAtual <= maxSlots and isEquipRunning do
+        local minhaPlot = AcharMinhaPlot()
+        if not minhaPlot then setStatus("❌ Plot não encontrada, aguardando...", Color3.fromRGB(255,50,50)); task.wait(1); continue end
         setStatus("🔍 Procurando p/ Slot " .. slotAtual .. "...", ACCENT)
         local bonecoEncontrado = nil
         local targetLower = quirkEscolhida:lower()
-
         for chave, dados in pairs(MatrizSalva) do
             if type(dados) == "table" then
                 local ehUnit = false
@@ -1464,175 +576,365 @@ local function IniciarAutoEquip(quirkEscolhida)
                     if uuid and nome then
                         uuid = tostring(uuid)
                         if not uuidsUsados[uuid] then
-                            local quirkAtual = LerQuirkDoBoneco(dados)
-                            if quirkAtual and quirkAtual:lower() == targetLower then
-                                bonecoEncontrado = { uuid = uuid, nome = nome }
-                                break
-                            end
+                            local q = LerQuirkDoBoneco(dados)
+                            if q and q:lower() == targetLower then bonecoEncontrado = { uuid = uuid, nome = nome }; break end
                         end
                     end
                 end
             end
         end
-
-        if not bonecoEncontrado then
-            setStatus("⏳ Aguardando bonecos...", ACCENT)
-            task.wait(0.5)
-        else
-            uuidsUsados[bonecoEncontrado.uuid] = true
-            setStatus("⚙️ Equipando: " .. bonecoEncontrado.nome, ACCENT)
-            pcall(function() EquipEvent:InvokeServer(bonecoEncontrado.uuid) end)
-            task.wait(0.2)
-            setStatus("🗂️ Slot " .. slotAtual .. "/" .. maxSlots, ACCENT)
-            pcall(function() InteractSlotEvent:FireServer(slotAtual) end)
-            task.wait(0.1)
-            if not SlotPreenchido(slotAtual) then
-                setStatus("🔄 Retentando Slot " .. slotAtual, Color3.fromRGB(200, 200, 0))
+        if not bonecoEncontrado then setStatus("⏳ Aguardando bonecos...", ACCENT); task.wait(0.5) else
+            local colocou = false
+            local tentativas = 0
+            local MAX_TENTATIVAS = 10
+            while tentativas < MAX_TENTATIVAS and isEquipRunning do
+                tentativas = tentativas + 1
+                setStatus("⚙️ " .. bonecoEncontrado.nome .. " → Slot " .. slotAtual .. " (tent " .. tentativas .. ")", ACCENT)
                 pcall(function() EquipEvent:InvokeServer(bonecoEncontrado.uuid) end)
-                task.wait(0.3)
+                task.wait(0.2)
                 pcall(function() InteractSlotEvent:FireServer(slotAtual) end)
-                task.wait(0.4)
+                local esperou = 0
+                while esperou < 8 do
+                    esperou = esperou + 1
+                    task.wait(0.15)
+                    if UUIDNoSlot(minhaPlot, slotAtual, bonecoEncontrado.uuid) then colocou = true; break end
+                end
+                if colocou then break end
+                setStatus("🔄 UUID não no slot " .. slotAtual .. ", retentando...", Color3.fromRGB(200,200,0))
+                task.wait(0.2)
             end
-            slotAtual = slotAtual + 1
+            if colocou then uuidsUsados[bonecoEncontrado.uuid] = true; setStatus("✅ Slot " .. slotAtual .. " OK", Color3.fromRGB(0,255,0)); slotAtual = slotAtual + 1
+            else setStatus("❌ Desisti do Slot " .. slotAtual, Color3.fromRGB(255,50,50)); slotAtual = slotAtual + 1 end
         end
     end
-
-    if slotAtual > maxSlots then setStatus("✅ all quirck selected placed!", Color3.fromRGB(0, 255, 0))
-    else setStatus("⏸️ Parado.", Color3.fromRGB(120, 120, 125)) end
     isEquipRunning = false
+    SetEquipVisual(false)
+    if slotAtual > maxSlots then setStatus("✅ all quirck selected placed!", Color3.fromRGB(0,255,0)) else setStatus("⏸️ Parado.", Color3.fromRGB(120,120,125)) end
 end
 
 btnAutoEquip.MouseButton1Click:Connect(function()
-    if isEquipRunning then
-        isEquipRunning = false
-        btnAutoEquip.Text = "AUTO EQUIP: OFF"
-        btnAutoEquip.TextColor3 = Color3.fromRGB(180, 90, 90)
-        btnAutoEquip.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
-        barEquipStroke.Color = STROKE
-        setStatus("⏸️ Equip pausado.", Color3.fromRGB(120, 120, 125))
-        return
-    end
-
-    if not SelectedEquip then
-        mostrarNotificacao("Selecione uma Quirk na coluna EQUIP!", Color3.fromRGB(255, 100, 100))
-        return
-    end
-
-    isEquipRunning = true
-    btnAutoEquip.Text = "AUTO EQUIP: ON"
-    btnAutoEquip.TextColor3 = ACCENT
-    btnAutoEquip.BackgroundColor3 = Color3.fromRGB(35, 15, 0)
-    barEquipStroke.Color = ACCENT
-
-    task.spawn(function() IniciarAutoEquip(SelectedEquip) end)
+    if isEquipRunning then isEquipRunning = false; SetEquipVisual(false); setStatus("⏸️ Equip pausado.", Color3.fromRGB(120,120,125)); return end
+    if not SelectedEquip then mostrarNotificacao("Selecione uma Quirk na coluna EQUIP!", Color3.fromRGB(255,100,100)); return end
+    isEquipRunning = true; SetEquipVisual(true); task.spawn(function() IniciarAutoEquip(SelectedEquip) end)
 end)
 
--- ==========================================
--- LÓGICA DO LOCK SELECTED E UNLOCK ALL
--- ==========================================
 btnLock.MouseButton1Click:Connect(function()
-    if not MatrizSalva then
-        mostrarNotificacao("Matriz vazia, aguarde carregar!", Color3.fromRGB(255, 100, 100))
-        return
-    end
-
+    if not MatrizSalva then mostrarNotificacao("Matriz vazia, aguarde carregar!", Color3.fromRGB(255,100,100)); return end
     local LockEvent = ReplicatedStorage.Network.UnitService.RE.SetLocked
-    local uuidsParaLock = {}
-
+    local uuids = {}
     setStatus("🔒 Coletando UUIDs...", ACCENT)
-    
     for chave, dados in pairs(MatrizSalva) do
         if type(dados) == "table" then
             local ehUnit = false
             pcall(function() for k, v in pairs(dados) do if tostring(k):lower() == "kind" and tostring(v) == "Unit" then ehUnit = true; return end end end)
             if ehUnit then
                 local uuid = dados.key or dados.Key or (type(chave) == "string" and chave) or dados.UUID or dados.Id
-                if uuid then
-                    local quirkAtual = LerQuirkDoBoneco(dados)
-                    if quirkAtual and SelectedLocks[quirkAtual] then
-                        uuidsParaLock[tostring(uuid)] = true
-                    end
-                end
+                if uuid then local q = LerQuirkDoBoneco(dados); if q and SelectedLocks[q] then uuids[tostring(uuid)] = true end end
             end
         end
     end
-
-    local count = 0
-    for _ in pairs(uuidsParaLock) do count = count + 1 end
-    
-    if count > 0 then
-        setStatus("🔒 Aplicando Lock em " .. count .. " bonecos...", ACCENT)
-        pcall(function() LockEvent:FireServer(uuidsParaLock) end)
-        task.wait(0.5)
-        setStatus("✅ Lock aplicado com sucesso!", Color3.fromRGB(0, 255, 0))
-    else
-        setStatus("❌ Nenhum boneco encontrado.", Color3.fromRGB(255, 50, 50))
-    end
+    local count = 0; for _ in pairs(uuids) do count = count + 1 end
+    if count > 0 then setStatus("🔒 Aplicando Lock em " .. count .. " bonecos...", ACCENT); pcall(function() LockEvent:FireServer(uuids) end); task.wait(0.5); setStatus("✅ Lock aplicado com sucesso!", Color3.fromRGB(0,255,0)) else setStatus("❌ Nenhum boneco encontrado.", Color3.fromRGB(255,50,50)) end
 end)
 
 btnUnlockAll.MouseButton1Click:Connect(function()
-    if not MatrizSalva then
-        mostrarNotificacao("Matriz vazia, aguarde carregar!", Color3.fromRGB(255, 100, 100))
-        return
-    end
-    
+    if not MatrizSalva then mostrarNotificacao("Matriz vazia, aguarde carregar!", Color3.fromRGB(255,100,100)); return end
     local LockEvent = ReplicatedStorage.Network.UnitService.RE.SetLocked
-    local uuidsParaUnlock = {}
-    
+    local uuids = {}
     setStatus("🔓 Coletando UUIDs para Unlock...", ACCENT)
-    
     for chave, dados in pairs(MatrizSalva) do
         if type(dados) == "table" then
             local ehUnit = false
             pcall(function() for k, v in pairs(dados) do if tostring(k):lower() == "kind" and tostring(v) == "Unit" then ehUnit = true; return end end end)
             if ehUnit then
                 local uuid = dados.key or dados.Key or (type(chave) == "string" and chave) or dados.UUID or dados.Id
-                if uuid then
-                    uuidsParaUnlock[tostring(uuid)] = false -- false = Unlock
+                if uuid then uuids[tostring(uuid)] = false end
+            end
+        end
+    end
+    local count = 0; for _ in pairs(uuids) do count = count + 1 end
+    if count > 0 then setStatus("🔓 Removendo Lock de " .. count .. " bonecos...", ACCENT); pcall(function() LockEvent:FireServer(uuids) end); task.wait(0.5); setStatus("✅ Unlock em todos os bonecos concluído!", Color3.fromRGB(0,255,0)) else setStatus("❌ Nenhum boneco encontrado.", Color3.fromRGB(255,50,50)) end
+end)
+
+-- ================== ABA TOWER ==================
+local COL_GAP = 4
+local COL_WIDTH = (WIDTH_EXPANDED - 16 - COL_GAP) / 2
+local SCROLL_H = 78
+local SELECT_H = 16
+local SCROLL_TOP = 16
+local SELECT_TOP = SCROLL_TOP + SCROLL_H + 3
+local TOGGLE_TOP = SELECT_TOP + SELECT_H + 4
+
+local HalloweenSection = Instance.new("Frame"); HalloweenSection.Size = UDim2.new(0,COL_WIDTH,0,150); HalloweenSection.Position = UDim2.new(0,8,0,0); HalloweenSection.BackgroundTransparency = 1; HalloweenSection.Parent = PageTower
+local NormalSection = Instance.new("Frame"); NormalSection.Size = UDim2.new(0,COL_WIDTH,0,150); NormalSection.Position = UDim2.new(0,8 + COL_WIDTH + COL_GAP,0,0); NormalSection.BackgroundTransparency = 1; NormalSection.Parent = PageTower
+
+local function montarSecaoTower(parent, titulo)
+    local tl = Instance.new("TextLabel"); tl.Size = UDim2.new(1,0,0,14); tl.Position = UDim2.new(0,2,0,0); tl.BackgroundTransparency = 1; tl.Text = titulo; tl.TextColor3 = ACCENT; tl.Font = Enum.Font.GothamBold; tl.TextSize = 8; tl.TextXAlignment = Enum.TextXAlignment.Left; tl.ZIndex = 3; tl.Parent = parent
+    local s = Instance.new("ScrollingFrame"); s.Size = UDim2.new(1,-4,0,SCROLL_H); s.Position = UDim2.new(0,2,0,SCROLL_TOP); s.BackgroundColor3 = Color3.fromRGB(15,15,20); s.BorderSizePixel = 0; s.ScrollBarThickness = 2; s.ScrollBarImageColor3 = ACCENT; s.CanvasSize = UDim2.new(0,0,0,0); s.AutomaticCanvasSize = Enum.AutomaticSize.Y; s.Parent = parent; Instance.new("UICorner", s).CornerRadius = UDim.new(0,5)
+    local l = Instance.new("UIListLayout"); l.SortOrder = Enum.SortOrder.LayoutOrder; l.Padding = UDim.new(0,1); l.Parent = s
+    local p = Instance.new("UIPadding"); p.PaddingTop = UDim.new(0,2); p.PaddingLeft = UDim.new(0,2); p.PaddingBottom = UDim.new(0,2); p.Parent = s
+    local row = Instance.new("Frame"); row.Size = UDim2.new(1,-4,0,SELECT_H); row.Position = UDim2.new(0,2,0,SELECT_TOP); row.BackgroundTransparency = 1; row.Parent = parent
+    local bs = Instance.new("TextButton"); bs.Size = UDim2.new(0.5,-1,1,0); bs.Position = UDim2.new(0,0,0,0); bs.BackgroundColor3 = Color3.fromRGB(28,40,28); bs.Text = "ALL"; bs.TextColor3 = Color3.fromRGB(120,200,120); bs.TextSize = 7; bs.Font = Enum.Font.GothamBold; bs.BorderSizePixel = 0; bs.AutoButtonColor = false; bs.ZIndex = 2; bs.Parent = row; Instance.new("UICorner", bs).CornerRadius = UDim.new(0,3)
+    local bss = Instance.new("UIStroke"); bss.Color = Color3.fromRGB(60,120,60); bss.Thickness = 1; bss.Transparency = 0.4; bss.Parent = bs
+    local bd = Instance.new("TextButton"); bd.Size = UDim2.new(0.5,-1,1,0); bd.Position = UDim2.new(0.5,1,0,0); bd.BackgroundColor3 = Color3.fromRGB(40,25,25); bd.Text = "NONE"; bd.TextColor3 = Color3.fromRGB(200,120,120); bd.TextSize = 7; bd.Font = Enum.Font.GothamBold; bd.BorderSizePixel = 0; bd.AutoButtonColor = false; bd.ZIndex = 2; bd.Parent = row; Instance.new("UICorner", bd).CornerRadius = UDim.new(0,3)
+    local bds = Instance.new("UIStroke"); bds.Color = Color3.fromRGB(120,60,60); bds.Thickness = 1; bds.Transparency = 0.4; bds.Parent = bd
+    return { scroll = s, btnSelect = bs, btnDeselect = bd }
+end
+
+local secHalloween = montarSecaoTower(HalloweenSection, "🎃 HALLOWEEN")
+local secNormal = montarSecaoTower(NormalSection, "⚔️ NORMAL")
+local HalloweenTowers = { { name = "Front Yard" }, { name = "Foyer" }, { name = "Crypt" }, { name = "Attic" }, { name = "Bell Tower" }, { name = "The Abyss" } }
+local NormalTowers = { { name = "Dragon Tower" }, { name = "Cursed Tower" }, { name = "Pirate Tower" }, { name = "Hidden Leaf Tower" }, { name = "Slayer Tower" }, { name = "Shadow Tower" } }
+
+local function criarBotaoTower(parent, texto, layoutOrder)
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(1,-2,0,20); b.BackgroundColor3 = Color3.fromRGB(32,16,16); b.Text = ""; b.BorderSizePixel = 0; b.AutoButtonColor = false; b.ZIndex = 2; b.LayoutOrder = layoutOrder; b.Parent = parent; Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    local s = Instance.new("UIStroke"); s.Thickness = 1; s.Color = STROKE; s.Transparency = 0.5; s.Parent = b
+    local c = Instance.new("Frame"); c.Size = UDim2.new(0,9,0,9); c.Position = UDim2.new(0,5,0.5,-4.5); c.BackgroundColor3 = Color3.fromRGB(15,15,20); c.BorderSizePixel = 0; c.ZIndex = 3; c.Parent = b; Instance.new("UICorner", c).CornerRadius = UDim.new(1,0)
+    local cs = Instance.new("UIStroke"); cs.Color = STROKE; cs.Thickness = 1; cs.Parent = c
+    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1,-16,1,0); l.Position = UDim2.new(0,16,0,0); l.BackgroundTransparency = 1; l.Text = texto; l.TextColor3 = Color3.fromRGB(180,90,90); l.TextSize = 7; l.Font = Enum.Font.GothamBold; l.TextXAlignment = Enum.TextXAlignment.Left; l.TextTruncate = Enum.TextTruncate.AtEnd; l.ZIndex = 3; l.Parent = b
+    return b, s, l, c, cs
+end
+
+local function updateTowerVisual(b, s, l, c, cs, isOn)
+    if isOn then l.TextColor3 = ACCENT; b.BackgroundColor3 = Color3.fromRGB(35,15,0); s.Color = ACCENT; c.BackgroundColor3 = ACCENT; cs.Color = ACCENT
+    else l.TextColor3 = Color3.fromRGB(180,90,90); b.BackgroundColor3 = Color3.fromRGB(32,16,16); s.Color = STROKE; c.BackgroundColor3 = Color3.fromRGB(15,15,20); cs.Color = STROKE end
+end
+
+local SelectedTowers = {}
+local SelectedHalloween = {}
+local SelectedNormal = {}
+local HalloweenButtons = {}
+local NormalButtons = {}
+
+local function temHalloweenMarcada() for _, v in pairs(SelectedHalloween) do if v then return true end end return false end
+local function temNormalMarcada() for _, v in pairs(SelectedNormal) do if v then return true end end return false end
+
+for i, t in ipairs(HalloweenTowers) do
+    local b, s, l, c, cs = criarBotaoTower(secHalloween.scroll, t.name, i); HalloweenButtons[t.name] = { btn = b, str = s, lbl = l, circ = c, cstr = cs }
+    b.MouseButton1Click:Connect(function()
+        if SelectedHalloween[t.name] then SelectedHalloween[t.name] = nil; SelectedTowers[t.name] = nil; updateTowerVisual(b, s, l, c, cs, false)
+        else if temNormalMarcada() then mostrarNotificacao("Desmarque as Tower Normal pra ativar Tower Halloween", Color3.fromRGB(255,100,100)); return end
+            SelectedHalloween[t.name] = true; SelectedTowers[t.name] = true; updateTowerVisual(b, s, l, c, cs, true) end
+    end)
+end
+
+for i, t in ipairs(NormalTowers) do
+    local b, s, l, c, cs = criarBotaoTower(secNormal.scroll, t.name, i); NormalButtons[t.name] = { btn = b, str = s, lbl = l, circ = c, cstr = cs }
+    b.MouseButton1Click:Connect(function()
+        if SelectedNormal[t.name] then SelectedNormal[t.name] = nil; SelectedTowers[t.name] = nil; updateTowerVisual(b, s, l, c, cs, false)
+        else if temHalloweenMarcada() then mostrarNotificacao("desmarque as tower de hallowen pra ativar tower normal", Color3.fromRGB(255,100,100)); return end
+            SelectedNormal[t.name] = true; SelectedTowers[t.name] = true; updateTowerVisual(b, s, l, c, cs, true) end
+    end)
+end
+
+secHalloween.btnSelect.MouseButton1Click:Connect(function()
+    if temNormalMarcada() then mostrarNotificacao("Desmarque as Tower Normal pra ativar Tower Halloween", Color3.fromRGB(255,100,100)); return end
+    for _, t in ipairs(HalloweenTowers) do SelectedHalloween[t.name] = true; SelectedTowers[t.name] = true; local data = HalloweenButtons[t.name]; if data then updateTowerVisual(data.btn, data.str, data.lbl, data.circ, data.cstr, true) end end
+end)
+secHalloween.btnDeselect.MouseButton1Click:Connect(function() for _, t in ipairs(HalloweenTowers) do SelectedHalloween[t.name] = nil; SelectedTowers[t.name] = nil; local data = HalloweenButtons[t.name]; if data then updateTowerVisual(data.btn, data.str, data.lbl, data.circ, data.cstr, false) end end end)
+secNormal.btnSelect.MouseButton1Click:Connect(function()
+    if temHalloweenMarcada() then mostrarNotificacao("desmarque as tower de hallowen pra ativar tower normal", Color3.fromRGB(255,100,100)); return end
+    for _, t in ipairs(NormalTowers) do SelectedNormal[t.name] = true; SelectedTowers[t.name] = true; local data = NormalButtons[t.name]; if data then updateTowerVisual(data.btn, data.str, data.lbl, data.circ, data.cstr, true) end end
+end)
+secNormal.btnDeselect.MouseButton1Click:Connect(function() for _, t in ipairs(NormalTowers) do SelectedNormal[t.name] = nil; SelectedTowers[t.name] = nil; local data = NormalButtons[t.name]; if data then updateTowerVisual(data.btn, data.str, data.lbl, data.circ, data.cstr, false) end end end)
+
+local btnAutoRotateTower = Instance.new("TextButton"); btnAutoRotateTower.Size = UDim2.new(1,-20,0,22); btnAutoRotateTower.Position = UDim2.new(0,10,0,TOGGLE_TOP); btnAutoRotateTower.BackgroundColor3 = Color3.fromRGB(32,16,16); btnAutoRotateTower.Text = "AUTO ROTATE: OFF"; btnAutoRotateTower.TextColor3 = Color3.fromRGB(180,90,90); btnAutoRotateTower.TextSize = 9; btnAutoRotateTower.Font = Enum.Font.GothamBold; btnAutoRotateTower.BorderSizePixel = 0; btnAutoRotateTower.AutoButtonColor = false; btnAutoRotateTower.ZIndex = 5; btnAutoRotateTower.Parent = PageTower; Instance.new("UICorner", btnAutoRotateTower).CornerRadius = UDim.new(0,5)
+local barTowerStroke = Instance.new("UIStroke"); barTowerStroke.Thickness = 1; barTowerStroke.Color = STROKE; barTowerStroke.Transparency = 0.5; barTowerStroke.Parent = btnAutoRotateTower
+
+local rotacaoTowerIndex = 0
+local function getListaTowersSelecionadas()
+    local l = {}
+    for _, t in ipairs(HalloweenTowers) do if SelectedTowers[t.name] then table.insert(l, t.name) end end
+    for _, t in ipairs(NormalTowers) do if SelectedTowers[t.name] then table.insert(l, t.name) end end
+    return l
+end
+
+btnAutoRotateTower.MouseButton1Click:Connect(function()
+    if isAutoRotateTowerRunning then
+        isAutoRotateTowerRunning = false
+        btnAutoRotateTower.Text = "AUTO ROTATE: OFF"; btnAutoRotateTower.TextColor3 = Color3.fromRGB(180,90,90); btnAutoRotateTower.BackgroundColor3 = Color3.fromRGB(32,16,16); barTowerStroke.Color = STROKE
+        setStatus("Auto Tower Desligado.", Color3.fromRGB(120,120,120))
+        if cancelTowerRF then pcall(function() cancelTowerRF:InvokeServer() end) end
+        return
+    end
+    isAutoRotateTowerRunning = true
+    btnAutoRotateTower.Text = "AUTO ROTATE: ON"; btnAutoRotateTower.TextColor3 = ACCENT; btnAutoRotateTower.BackgroundColor3 = Color3.fromRGB(35,15,0); barTowerStroke.Color = ACCENT
+    task.spawn(function()
+        while isAutoRotateTowerRunning do
+            local l = getListaTowersSelecionadas()
+            if #l == 0 then setStatus("Nenhuma Tower selecionada!", Color3.fromRGB(255,50,50)); task.wait(2); continue end
+            rotacaoTowerIndex = (rotacaoTowerIndex % #l) + 1
+            local ct = l[rotacaoTowerIndex]
+            if not completeTowerRF or not cancelTowerRF then setStatus("❌ Erro nos Remotes da Tower.", Color3.fromRGB(255,50,50)); isAutoRotateTowerRunning = false; break end
+            local ptr = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Towers"):WaitForChild("RF"):WaitForChild("PlayTower")
+            setStatus("🏰 Entrando: " .. ct, ACCENT)
+            local entrou = false
+            local tentativas = 0
+            while isAutoRotateTowerRunning and not entrou and tentativas < 10 do
+                tentativas = tentativas + 1
+                pcall(function() entrou = (ptr:InvokeServer(ct) == true) end)
+                if not entrou then setStatus("⏳ Recusado " .. tentativas .. "/10: " .. ct, Color3.fromRGB(255,200,0)); task.wait(1) end
+            end
+            if not entrou then setStatus("❌ Bloqueada: " .. ct, Color3.fromRGB(255,50,50)); task.wait(2); continue end
+            task.wait(2); setStatus("⚔️ Lutando: " .. ct, Color3.fromRGB(255,200,0))
+            torreFinalizada = false; ultimoFloor = 0; achouAndar = false
+            while isAutoRotateTowerRunning and not torreFinalizada do
+                pcall(function() completeTowerRF:InvokeServer() end)
+                if achouAndar then achouAndar = false; setStatus("🏆 Floor " .. ultimoFloor, Color3.fromRGB(0,255,0)) end
+                task.wait(1.5)
+            end
+            if isAutoRotateTowerRunning then setStatus("🏁 Torre finalizada...", Color3.fromRGB(255,200,0)); pcall(function() cancelTowerRF:InvokeServer() end); task.wait(1) end
+        end
+    end)
+end)
+
+-- ================== ABA AUTO ROLL G/T ==================
+local GradeRollEvent = ReplicatedStorage.Network.GradeService.RE.Roll
+local TraitRollEvent = ReplicatedStorage.Network.TraitService.RE.Roll
+local GRADES = {"∞", "Ω", "Z", "神", "Z+"}
+local TRAITS = {"Genesis", "Eternal", "Transcendent", "Paradox"}
+local gradeSelected = {} for _, g in ipairs(GRADES) do gradeSelected[g] = false end
+local traitSelected = {} for _, t in ipairs(TRAITS) do traitSelected[t] = false end
+local selectedBonecos = {}
+local isAutoGradeRunning = false
+local isAutoTraitRunning = false
+
+local LeftPanel = Instance.new("Frame"); LeftPanel.Size = UDim2.new(0, 110, 0, 180); LeftPanel.Position = UDim2.new(0, 6, 0, 0); LeftPanel.BackgroundTransparency = 1; LeftPanel.Parent = PageRoll
+local gTitle = Instance.new("TextLabel"); gTitle.Size = UDim2.new(1, 0, 0, 12); gTitle.BackgroundTransparency = 1; gTitle.Text = "🎯 Grade"; gTitle.TextColor3 = ACCENT; gTitle.Font = Enum.Font.GothamBold; gTitle.TextSize = 9; gTitle.TextXAlignment = Enum.TextXAlignment.Left; gTitle.Parent = LeftPanel
+local gScroll = Instance.new("ScrollingFrame"); gScroll.Size = UDim2.new(1, 0, 0, 55); gScroll.Position = UDim2.new(0, 0, 0, 14); gScroll.BackgroundColor3 = Color3.fromRGB(20, 15, 25); gScroll.BorderSizePixel = 0; gScroll.ScrollBarThickness = 2; gScroll.ScrollBarImageColor3 = ACCENT; gScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; gScroll.Parent = LeftPanel; Instance.new("UICorner", gScroll).CornerRadius = UDim.new(0, 6)
+Instance.new("UIListLayout", gScroll).Padding = UDim.new(0, 2)
+for i, g in ipairs(GRADES) do
+    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1, -4, 0, 16); btn.BackgroundColor3 = ITEM_BG; btn.Text = g; btn.TextColor3 = TEXT_COLOR; btn.TextSize = 9; btn.Font = Enum.Font.GothamBold; btn.BorderSizePixel = 0; btn.LayoutOrder = i; btn.Parent = gScroll; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    btn.MouseButton1Click:Connect(function() gradeSelected[g] = not gradeSelected[g]; if gradeSelected[g] then btn.BackgroundColor3 = ACCENT; btn.TextColor3 = Color3.fromRGB(255,255,255) else btn.BackgroundColor3 = ITEM_BG; btn.TextColor3 = TEXT_COLOR end end)
+end
+local btnGradeRun = Instance.new("TextButton"); btnGradeRun.Size = UDim2.new(1, 0, 0, 20); btnGradeRun.Position = UDim2.new(0, 0, 0, 72); btnGradeRun.BackgroundColor3 = ITEM_BG; btnGradeRun.Text = "GRADE: OFF"; btnGradeRun.TextColor3 = TEXT_COLOR; btnGradeRun.TextSize = 8; btnGradeRun.Font = Enum.Font.GothamBold; btnGradeRun.Parent = LeftPanel; Instance.new("UICorner", btnGradeRun).CornerRadius = UDim.new(0, 5)
+
+local tTitle = Instance.new("TextLabel"); tTitle.Size = UDim2.new(1, 0, 0, 12); tTitle.Position = UDim2.new(0, 0, 0, 98); tTitle.BackgroundTransparency = 1; tTitle.Text = "🎯 Trait"; tTitle.TextColor3 = ACCENT; tTitle.Font = Enum.Font.GothamBold; tTitle.TextSize = 9; tTitle.TextXAlignment = Enum.TextXAlignment.Left; tTitle.Parent = LeftPanel
+local tScroll = Instance.new("ScrollingFrame"); tScroll.Size = UDim2.new(1, 0, 0, 55); tScroll.Position = UDim2.new(0, 0, 0, 112); tScroll.BackgroundColor3 = Color3.fromRGB(20, 15, 25); tScroll.BorderSizePixel = 0; tScroll.ScrollBarThickness = 2; tScroll.ScrollBarImageColor3 = ACCENT; tScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; tScroll.Parent = LeftPanel; Instance.new("UICorner", tScroll).CornerRadius = UDim.new(0, 6)
+Instance.new("UIListLayout", tScroll).Padding = UDim.new(0, 2)
+for i, t in ipairs(TRAITS) do
+    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1, -4, 0, 16); btn.BackgroundColor3 = ITEM_BG; btn.Text = t; btn.TextColor3 = TEXT_COLOR; btn.TextSize = 7; btn.Font = Enum.Font.GothamBold; btn.BorderSizePixel = 0; btn.LayoutOrder = i; btn.Parent = tScroll; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    btn.MouseButton1Click:Connect(function() traitSelected[t] = not traitSelected[t]; if traitSelected[t] then btn.BackgroundColor3 = ACCENT; btn.TextColor3 = Color3.fromRGB(255,255,255) else btn.BackgroundColor3 = ITEM_BG; btn.TextColor3 = TEXT_COLOR end end)
+end
+local btnTraitRun = Instance.new("TextButton"); btnTraitRun.Size = UDim2.new(1, 0, 0, 20); btnTraitRun.Position = UDim2.new(0, 0, 0, 170); btnTraitRun.BackgroundColor3 = ITEM_BG; btnTraitRun.Text = "TRAIT: OFF"; btnTraitRun.TextColor3 = TEXT_COLOR; btnTraitRun.TextSize = 8; btnTraitRun.Font = Enum.Font.GothamBold; btnTraitRun.Parent = LeftPanel; Instance.new("UICorner", btnTraitRun).CornerRadius = UDim.new(0, 5)
+
+local RightPanel = Instance.new("Frame"); RightPanel.Size = UDim2.new(1, -120, 0, 200); RightPanel.Position = UDim2.new(0, 118, 0, 0); RightPanel.BackgroundTransparency = 1; RightPanel.Parent = PageRoll
+local SearchBox = Instance.new("TextBox"); SearchBox.Size = UDim2.new(1, 0, 0, 20); SearchBox.BackgroundColor3 = Color3.fromRGB(15, 15, 20); SearchBox.PlaceholderText = "🔍 Buscar boneco..."; SearchBox.Text = ""; SearchBox.TextColor3 = TEXT_COLOR; SearchBox.TextSize = 9; SearchBox.Font = Enum.Font.Gotham; SearchBox.ClearTextOnFocus = false; SearchBox.Parent = RightPanel; Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
+local ScrollLista = Instance.new("ScrollingFrame"); ScrollLista.Size = UDim2.new(1, 0, 1, -24); ScrollLista.Position = UDim2.new(0, 0, 0, 24); ScrollLista.BackgroundColor3 = Color3.fromRGB(20, 15, 25); ScrollLista.BorderSizePixel = 0; ScrollLista.ScrollBarThickness = 3; ScrollLista.ScrollBarImageColor3 = ACCENT; ScrollLista.AutomaticCanvasSize = Enum.AutomaticSize.Y; ScrollLista.Parent = RightPanel; Instance.new("UICorner", ScrollLista).CornerRadius = UDim.new(0, 6)
+Instance.new("UIListLayout", ScrollLista).Padding = UDim.new(0, 2)
+
+local ListaItens = {}
+local function AtualizarLista()
+    for _, v in ipairs(ListaItens) do v.frame:Destroy() end
+    table.clear(ListaItens)
+    if not MatrizSalva then return end
+    local filtro = SearchBox.Text:lower()
+    for chave, dados in pairs(MatrizSalva) do
+        if type(dados) == "table" then
+            local ehUnit = false
+            for k, v in pairs(dados) do if tostring(k):lower() == "kind" and tostring(v) == "Unit" then ehUnit = true; break end end
+            if ehUnit then
+                local uuid = dados.key or dados.Key or (type(chave) == "string" and chave) or dados.Id
+                local nome = dados.name or dados.Name or "?"
+                if uuid and (filtro == "" or nome:lower():find(filtro, 1, true)) then
+                    local itemFrame = Instance.new("Frame"); itemFrame.Size = UDim2.new(1, 0, 0, 28); itemFrame.BackgroundColor3 = ITEM_BG; itemFrame.Parent = ScrollLista; Instance.new("UICorner", itemFrame).CornerRadius = UDim.new(0, 4)
+                    local btnCheck = Instance.new("TextButton"); btnCheck.Size = UDim2.new(1, 0, 1, 0); btnCheck.BackgroundTransparency = 1; btnCheck.Text = ""; btnCheck.Parent = itemFrame
+                    local txtNome = Instance.new("TextLabel"); txtNome.Size = UDim2.new(1, -10, 0, 14); txtNome.Position = UDim2.new(0, 5, 0, 2); txtNome.BackgroundTransparency = 1; txtNome.Text = "☐ " .. nome; txtNome.TextColor3 = TEXT_COLOR; txtNome.TextSize = 9; txtNome.Font = Enum.Font.GothamBold; txtNome.TextXAlignment = Enum.TextXAlignment.Left; txtNome.Parent = itemFrame
+                    local txtInfo = Instance.new("TextLabel"); txtInfo.Size = UDim2.new(1, -10, 0, 12); txtInfo.Position = UDim2.new(0, 5, 0, 15); txtInfo.BackgroundTransparency = 1; txtInfo.TextColor3 = TEXT_MUTED; txtInfo.TextSize = 8; txtInfo.Font = Enum.Font.Gotham; txtInfo.TextXAlignment = Enum.TextXAlignment.Left; txtInfo.Parent = itemFrame
+                    local function updateVisual()
+                        local gradeAtual = LerGradeDoBoneco(dados); local traitAtual = LerTraitDoBoneco(dados)
+                        txtInfo.Text = "Grade: " .. gradeAtual .. " | Trait: " .. traitAtual
+                        if selectedBonecos[uuid] then itemFrame.BackgroundColor3 = HEADER_BG; txtNome.Text = "☑ " .. nome; txtNome.TextColor3 = Color3.fromRGB(255,255,255) else itemFrame.BackgroundColor3 = ITEM_BG; txtNome.Text = "☐ " .. nome; txtNome.TextColor3 = TEXT_COLOR end
+                    end
+                    btnCheck.MouseButton1Click:Connect(function() selectedBonecos[uuid] = not selectedBonecos[uuid]; updateVisual() end)
+                    table.insert(ListaItens, { frame = itemFrame, uuid = uuid, dados = dados, atualizar = updateVisual })
+                    updateVisual()
                 end
             end
         end
     end
+end
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function() AtualizarLista() end)
 
-    local count = 0
-    for _ in pairs(uuidsParaUnlock) do count = count + 1 end
-    
-    if count > 0 then
-        setStatus("🔓 Removendo Lock de " .. count .. " bonecos...", ACCENT)
-        pcall(function() LockEvent:FireServer(uuidsParaUnlock) end)
-        task.wait(0.5)
-        setStatus("✅ Unlock em todos os bonecos concluído!", Color3.fromRGB(0, 255, 0))
-    else
-        setStatus("❌ Nenhum boneco encontrado.", Color3.fromRGB(255, 50, 50))
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    if method == "FireServer" and (self == GradeRollEvent or self == TraitRollEvent) then
+        local args = {...}; local uuidRollado = args[1]
+        task.delay(0.05, function() for _, item in ipairs(ListaItens) do if item.uuid == uuidRollado then item.atualizar(); break end end end)
+    end
+    return oldNamecall(self, ...)
+end)
+
+local function CheckGradeMatch(g) for k, sel in pairs(gradeSelected) do if sel and g:find(k, 1, true) then return true end end return false end
+local function CheckTraitMatch(t) for k, sel in pairs(traitSelected) do if sel and t:lower():find(k:lower(), 1, true) then return true end end return false end
+
+btnGradeRun.MouseButton1Click:Connect(function()
+    isAutoGradeRunning = not isAutoGradeRunning
+    if isAutoGradeRunning then btnGradeRun.Text = "GRADE: ON"; btnGradeRun.TextColor3 = ACCENT; btnGradeRun.BackgroundColor3 = HEADER_BG else btnGradeRun.Text = "GRADE: OFF"; btnGradeRun.TextColor3 = TEXT_COLOR; btnGradeRun.BackgroundColor3 = ITEM_BG end
+    if isAutoGradeRunning then
+        task.spawn(function()
+            while isAutoGradeRunning do
+                if MatrizSalva then
+                    for uuid, sel in pairs(selectedBonecos) do
+                        if sel then
+                            local dados = nil
+                            for _, d in pairs(MatrizSalva) do if type(d) == "table" and (d.key == uuid or d.Id == uuid) then dados = d; break end end
+                            if dados and not CheckGradeMatch(LerGradeDoBoneco(dados)) then
+                                task.spawn(function()
+                                    while isAutoGradeRunning and not CheckGradeMatch(LerGradeDoBoneco(dados)) do pcall(function() GradeRollEvent:FireServer(uuid) end); task.wait(0.01) end
+                                end)
+                            end
+                        end
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
     end
 end)
 
--- ==========================================
--- INICIALIZAÇÃO
--- ==========================================
+btnTraitRun.MouseButton1Click:Connect(function()
+    isAutoTraitRunning = not isAutoTraitRunning
+    if isAutoTraitRunning then btnTraitRun.Text = "TRAIT: ON"; btnTraitRun.TextColor3 = ACCENT; btnTraitRun.BackgroundColor3 = HEADER_BG else btnTraitRun.Text = "TRAIT: OFF"; btnTraitRun.TextColor3 = TEXT_COLOR; btnTraitRun.BackgroundColor3 = ITEM_BG end
+    if isAutoTraitRunning then
+        task.spawn(function()
+            while isAutoTraitRunning do
+                if MatrizSalva then
+                    for uuid, sel in pairs(selectedBonecos) do
+                        if sel then
+                            local dados = nil
+                            for _, d in pairs(MatrizSalva) do if type(d) == "table" and (d.key == uuid or d.Id == uuid) then dados = d; break end end
+                            if dados and not CheckTraitMatch(LerTraitDoBoneco(dados)) then
+                                task.spawn(function()
+                                    while isAutoTraitRunning and not CheckTraitMatch(LerTraitDoBoneco(dados)) do pcall(function() TraitRollEvent:FireServer(uuid) end); task.wait(0.01) end
+                                end)
+                            end
+                        end
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
+    end
+end)
+
+-- ================== LOOP INICIAL ==================
 task.spawn(function()
-    setStatus("🔍 Buscando Matriz Inicial...", ACCENT)
-    local tentativas = 0
-    while not MatrizSalva and tentativas < 20 do
+    setStatus("🔍 Buscando Matriz...", ACCENT)
+    local t = 0
+    while not MatrizSalva and t < 20 do
         MatrizSalva = BuscarMatriz()
-        if not MatrizSalva then
-            tentativas = tentativas + 1
-            setStatus("⏳ Carregando inventário... (" .. tentativas .. "/20)", Color3.fromRGB(200, 200, 0))
-            task.wait(1)
-        end
+        if not MatrizSalva then t = t + 1; setStatus("⏳ Carregando... (" .. t .. "/20)", Color3.fromRGB(200,200,0)); task.wait(1) end
     end
-
     task.wait(1)
-    isCompleteEnabled = true
-    isClaimEnabled = true
-    updateVisual(true, BtnComplete, StrComplete)
-    updateVisual(true, BtnClaim, StrClaim)
-
-    if MatrizSalva then
-        setStatus("Pronto (Memória Salva).", ACCENT)
-    else
-        setStatus("Pronto.", ACCENT)
+    if tpIslandTime > 0 then
+        local restante = 2 - (tick() - tpIslandTime)
+        if restante > 0 then setStatus("⏳ Aguardando pós-TP...", ACCENT); task.wait(restante) end
     end
+    isCompleteEnabled = true; isClaimEnabled = true
+    updateVisual(true, BtnComplete, StrComplete); updateVisual(true, BtnClaim, StrClaim)
+    if MatrizSalva then AtualizarLista() end
+    setStatus("Pronto.", ACCENT)
     startSmartQuest()
-    print("[CÉREBRO] 🟢 Iniciado automaticamente. Anti-AFK ativado.")
 end)
