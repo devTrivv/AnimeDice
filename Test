@@ -1,51 +1,98 @@
-print("Script iniciado")
+-- ============================================================
+-- BOOT COM XP CALL GLOBAL
+-- ============================================================
+local function log(...)
+    pcall(function() print("[AUTO]", ...) end)
+end
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local coreGui = game:GetService("CoreGui")
-local UserInputService = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
+log("Script iniciado")
+
+local function crash(err)
+    pcall(function() warn("[AUTO] ERRO FATAL: " .. tostring(err)) end)
+end
+
+local SCRIPT_OK, SCRIPT_ERR = xpcall(function()
+
+-- ============================================================
+-- SERVIÇOS
+-- ============================================================
+local Players            = game:GetService("Players")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local UserInputService   = game:GetService("UserInputService")
+local VirtualUser        = game:GetService("VirtualUser")
+local TweenService       = game:GetService("TweenService")
+local RunService         = game:GetService("RunService")
 local PathfindingService = game:GetService("PathfindingService")
-local HttpService = game:GetService("HttpService")
-local LocalPlayer = Players.LocalPlayer
-local UserId = LocalPlayer.UserId
+local HttpService        = game:GetService("HttpService")
 
+-- gethui seguro
+local coreGui
+do
+    local ok, res = pcall(function() return gethui and gethui() end)
+    if ok and res then
+        coreGui = res
+    else
+        local ok2, res2 = pcall(function() return game:GetService("CoreGui") end)
+        if ok2 and res2 then
+            coreGui = res2
+        else
+            coreGui = LocalPlayer and LocalPlayer:WaitForChild("PlayerGui") or nil
+        end
+    end
+end
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    LocalPlayer = Players:WaitForChild("LocalPlayer", 10)
+end
+if not LocalPlayer then
+    error("LocalPlayer não encontrado")
+end
+
+local UserId = LocalPlayer.UserId
+log("LocalPlayer:", LocalPlayer.Name, "UserId:", UserId)
+
+-- ============================================================
+-- WHITELIST
+-- ============================================================
 local Whitelist = {
-    [5545095845] = true,
-    [2638574247] = true,
+    [5545095845]  = true,
+    [2638574247]  = true,
     [11719929777] = true,
     [10795692261] = true,
-    [4808506152] = true,
-    [9080159328] = true,
+    [4808506152]  = true,
+    [9080159328]  = true,
     [11608089875] = true,
-    [-8] = true,
-    [-9] = true,
-    [-10] = true,
-    [8620736446] = true,
+    [-8]          = true,
+    [-9]          = true,
+    [-10]         = true,
+    [8620736446]  = true,
 }
 
 if not Whitelist[UserId] then
-    LocalPlayer:Kick("Acesso negado. Voce nao esta na Whitelist.")
+    pcall(function() LocalPlayer:Kick("Acesso negado. Voce nao esta na Whitelist.") end)
     return
 end
+log("Whitelist OK")
 
 local MeuDiscordID = "1171472297396293797"
 local cacheImg, contador = {}, 0
-local rpInicioMs = nil
-local ultimoStatus = nil
-local INTERVALO = 1
+local rpInicioMs    = nil
+local ultimoStatus  = nil
+local INTERVALO     = 1
 
 local VERDE_SPOTIFY = Color3.fromRGB(30, 215, 96)
 
 local STATUS = {
-    online  = {Color3.fromRGB(67, 181, 129),  "Online", "está online"},
-    idle    = {Color3.fromRGB(250, 166, 26),  "Ausente", "está ausente"},
-    dnd     = {Color3.fromRGB(240, 71, 71),   "Não perturbe", "está no modo não perturbe"},
-    offline = {Color3.fromRGB(116, 127, 141), "Offline", "está offline"},
+    online  = {Color3.fromRGB(67, 181, 129),  "Online",         "está online"},
+    idle    = {Color3.fromRGB(250, 166, 26),  "Ausente",        "está ausente"},
+    dnd     = {Color3.fromRGB(240, 71, 71),   "Não perturbe",   "está no modo não perturbe"},
+    offline = {Color3.fromRGB(116, 127, 141), "Offline",        "está offline"},
 }
 
+-- ============================================================
+-- HELPERS DE IMAGEM
+-- ============================================================
 local function imagemDiscord(url, prefixo)
     if not url or url == "" then return nil end
     if cacheImg[url] then return cacheImg[url] end
@@ -55,21 +102,27 @@ local function imagemDiscord(url, prefixo)
         writefile(arq, game:HttpGet(url))
         return getcustomasset(arq)
     end)
-    if ok then cacheImg[url] = res; return res end
+    if ok and res then cacheImg[url] = res; return res end
     return nil
 end
 
 local function resolverURLAsset(asset, appId)
     if not asset or asset == "" then return nil end
-    if string.find(asset, "spotify:") then return "https://i.scdn.co/image/" .. string.gsub(asset, "spotify:", "") end
+    if string.find(asset, "spotify:") then
+        return "https://i.scdn.co/image/" .. string.gsub(asset, "spotify:", "")
+    end
     if string.find(asset, "^https?://") then return asset end
-    if string.find(asset, "^mp:") then return "https://media.discordapp.net/" .. string.gsub(asset, "^mp:", "") end
-    if appId then return "https://cdn.discordapp.com/app-assets/" .. tostring(appId) .. "/" .. asset .. ".png" end
+    if string.find(asset, "^mp:") then
+        return "https://media.discordapp.net/" .. string.gsub(asset, "^mp:", "")
+    end
+    if appId then
+        return "https://cdn.discordapp.com/app-assets/" .. tostring(appId) .. "/" .. asset .. ".png"
+    end
     return nil
 end
 
 local function obterLogoRP(act)
-    if not act.assets then return nil end
+    if not act or not act.assets then return nil end
     local tentativas = {}
     if act.assets.large_image then table.insert(tentativas, act.assets.large_image) end
     if act.assets.small_image then table.insert(tentativas, act.assets.small_image) end
@@ -83,129 +136,143 @@ local function obterLogoRP(act)
     return nil
 end
 
+-- ============================================================
+-- TEMA
+-- ============================================================
 local Theme = {}
 
 if UserId == 2638574247 then
-    Theme.Title = "g' version"
-    Theme.Name = "g'"
-    Theme.Subtitle = "friend"
-    Theme.SubtitleColor = "RAINBOW_LOOP"
-    Theme.DiscordName = "g'"
-    Theme.DiscordUser = "@gusq1"
-    Theme.DiscordBadge = "FRIEND"
-    Theme.IntroAvatar = "rbxassetid://130750172858697"
-    Theme.IntroBg = "rbxassetid://74054600848526"
-    Theme.UiBg = "rbxassetid://113453328186819"
-    Theme.DiscordAvatar = "rbxassetid://130750172858697"
-    Theme.Accent = Color3.fromRGB(220, 220, 220)
-    Theme.AccentDark = Color3.fromRGB(150, 150, 150)
-    Theme.AccentGlow = Color3.fromRGB(255, 255, 255)
-    Theme.HeaderBg = Color3.fromRGB(250, 250, 250)
-    Theme.HeaderBg2 = Color3.fromRGB(220, 220, 220)
-    Theme.BgMain = Color3.fromRGB(240, 240, 240)
-    Theme.BgMain2 = Color3.fromRGB(230, 230, 230)
-    Theme.BtnBg = Color3.fromRGB(230, 230, 230)
-    Theme.BtnHover = Color3.fromRGB(210, 210, 210)
-    Theme.BtnOn = Color3.fromRGB(200, 200, 200)
-    Theme.Stroke = Color3.fromRGB(100, 100, 100)
-    Theme.TextDim = Color3.fromRGB(80, 80, 80)
-    Theme.TextBright = Color3.fromRGB(10, 10, 10)
-    Theme.DiscordBg = Color3.fromRGB(245, 245, 245)
+    Theme.Title          = "g' version"
+    Theme.Name           = "g'"
+    Theme.Subtitle       = "friend"
+    Theme.SubtitleColor  = "RAINBOW_LOOP"
+    Theme.DiscordName    = "g'"
+    Theme.DiscordUser    = "@gusq1"
+    Theme.DiscordBadge   = "FRIEND"
+    Theme.IntroAvatar    = "rbxassetid://130750172858697"
+    Theme.IntroBg        = "rbxassetid://74054600848526"
+    Theme.UiBg           = "rbxassetid://113453328186819"
+    Theme.DiscordAvatar  = "rbxassetid://130750172858697"
+    Theme.Accent         = Color3.fromRGB(220, 220, 220)
+    Theme.AccentDark     = Color3.fromRGB(150, 150, 150)
+    Theme.AccentGlow     = Color3.fromRGB(255, 255, 255)
+    Theme.HeaderBg       = Color3.fromRGB(250, 250, 250)
+    Theme.HeaderBg2      = Color3.fromRGB(220, 220, 220)
+    Theme.BgMain         = Color3.fromRGB(240, 240, 240)
+    Theme.BgMain2        = Color3.fromRGB(230, 230, 230)
+    Theme.BtnBg          = Color3.fromRGB(230, 230, 230)
+    Theme.BtnHover       = Color3.fromRGB(210, 210, 210)
+    Theme.BtnOn          = Color3.fromRGB(200, 200, 200)
+    Theme.Stroke         = Color3.fromRGB(100, 100, 100)
+    Theme.TextDim        = Color3.fromRGB(80, 80, 80)
+    Theme.TextBright     = Color3.fromRGB(10, 10, 10)
+    Theme.DiscordBg      = Color3.fromRGB(245, 245, 245)
 elseif UserId == 5545095845 then
-    Theme.Title = "Lust version"
-    Theme.Name = "Lust"
-    Theme.Subtitle = "OWNER"
-    Theme.SubtitleColor = "RAINBOW_LOOP"
-    Theme.DiscordName = "lust"
-    Theme.DiscordUser = "@_lustprince"
-    Theme.DiscordBadge = "OWNER"
-    Theme.IntroAvatar = "rbxassetid://130061234620035"
-    Theme.IntroBg = "rbxassetid://123322071004391"
-    Theme.UiBg = "rbxassetid://73312368204206"
-    Theme.DiscordAvatar = "rbxassetid://130061234620035"
-    Theme.Accent = Color3.fromRGB(0, 100, 0)
-    Theme.AccentDark = Color3.fromRGB(0, 60, 0)
-    Theme.AccentGlow = Color3.fromRGB(100, 200, 100)
-    Theme.HeaderBg = Color3.fromRGB(10, 30, 15)
-    Theme.HeaderBg2 = Color3.fromRGB(5, 15, 8)
-    Theme.BgMain = Color3.fromRGB(5, 8, 6)
-    Theme.BgMain2 = Color3.fromRGB(2, 5, 3)
-    Theme.BtnBg = Color3.fromRGB(15, 25, 18)
-    Theme.BtnHover = Color3.fromRGB(25, 45, 30)
-    Theme.BtnOn = Color3.fromRGB(20, 60, 30)
-    Theme.Stroke = Color3.fromRGB(0, 80, 0)
-    Theme.TextDim = Color3.fromRGB(130, 150, 130)
-    Theme.TextBright = Color3.fromRGB(220, 240, 220)
-    Theme.DiscordBg = Color3.fromRGB(10, 20, 12)
+    Theme.Title          = "Lust version"
+    Theme.Name           = "Lust"
+    Theme.Subtitle       = "OWNER"
+    Theme.SubtitleColor  = "RAINBOW_LOOP"
+    Theme.DiscordName    = "lust"
+    Theme.DiscordUser    = "@_lustprince"
+    Theme.DiscordBadge   = "OWNER"
+    Theme.IntroAvatar    = "rbxassetid://130061234620035"
+    Theme.IntroBg        = "rbxassetid://123322071004391"
+    Theme.UiBg           = "rbxassetid://73312368204206"
+    Theme.DiscordAvatar  = "rbxassetid://130061234620035"
+    Theme.Accent         = Color3.fromRGB(0, 100, 0)
+    Theme.AccentDark     = Color3.fromRGB(0, 60, 0)
+    Theme.AccentGlow     = Color3.fromRGB(100, 200, 100)
+    Theme.HeaderBg       = Color3.fromRGB(10, 30, 15)
+    Theme.HeaderBg2      = Color3.fromRGB(5, 15, 8)
+    Theme.BgMain         = Color3.fromRGB(5, 8, 6)
+    Theme.BgMain2        = Color3.fromRGB(2, 5, 3)
+    Theme.BtnBg          = Color3.fromRGB(15, 25, 18)
+    Theme.BtnHover       = Color3.fromRGB(25, 45, 30)
+    Theme.BtnOn          = Color3.fromRGB(20, 60, 30)
+    Theme.Stroke         = Color3.fromRGB(0, 80, 0)
+    Theme.TextDim        = Color3.fromRGB(130, 150, 130)
+    Theme.TextBright     = Color3.fromRGB(220, 240, 220)
+    Theme.DiscordBg      = Color3.fromRGB(10, 20, 12)
 else
-    Theme.Title = "Whitelisted version"
-    Theme.Name = "Lust"
-    Theme.Subtitle = "WHITELISTED"
-    Theme.SubtitleColor = "WHITE"
-    Theme.DiscordName = "Lust"
-    Theme.DiscordUser = "@_lustprince"
-    Theme.DiscordBadge = "WHITELISTED"
-    Theme.IntroAvatar = "rbxassetid://130061234620035"
-    Theme.IntroBg = nil
-    Theme.UiBg = "rbxassetid://73312368204206"
-    Theme.DiscordAvatar = "rbxassetid://130061234620035"
-    Theme.Accent = Color3.fromRGB(255, 255, 255)
-    Theme.AccentDark = Color3.fromRGB(200, 200, 200)
-    Theme.AccentGlow = Color3.fromRGB(255, 255, 255)
-    Theme.HeaderBg = Color3.fromRGB(30, 30, 30)
-    Theme.HeaderBg2 = Color3.fromRGB(20, 20, 20)
-    Theme.BgMain = Color3.fromRGB(15, 15, 15)
-    Theme.BgMain2 = Color3.fromRGB(10, 10, 10)
-    Theme.BtnBg = Color3.fromRGB(40, 40, 40)
-    Theme.BtnHover = Color3.fromRGB(60, 60, 60)
-    Theme.BtnOn = Color3.fromRGB(80, 80, 80)
-    Theme.Stroke = Color3.fromRGB(150, 150, 150)
-    Theme.TextDim = Color3.fromRGB(180, 180, 180)
-    Theme.TextBright = Color3.fromRGB(255, 255, 255)
-    Theme.DiscordBg = Color3.fromRGB(25, 25, 25)
+    Theme.Title          = "Whitelisted version"
+    Theme.Name           = "Lust"
+    Theme.Subtitle       = "WHITELISTED"
+    Theme.SubtitleColor  = "WHITE"
+    Theme.DiscordName    = "Lust"
+    Theme.DiscordUser    = "@_lustprince"
+    Theme.DiscordBadge   = "WHITELISTED"
+    Theme.IntroAvatar    = "rbxassetid://130061234620035"
+    Theme.IntroBg        = nil
+    Theme.UiBg           = "rbxassetid://73312368204206"
+    Theme.DiscordAvatar  = "rbxassetid://130061234620035"
+    Theme.Accent         = Color3.fromRGB(255, 255, 255)
+    Theme.AccentDark     = Color3.fromRGB(200, 200, 200)
+    Theme.AccentGlow     = Color3.fromRGB(255, 255, 255)
+    Theme.HeaderBg       = Color3.fromRGB(30, 30, 30)
+    Theme.HeaderBg2      = Color3.fromRGB(20, 20, 20)
+    Theme.BgMain         = Color3.fromRGB(15, 15, 15)
+    Theme.BgMain2        = Color3.fromRGB(10, 10, 10)
+    Theme.BtnBg          = Color3.fromRGB(40, 40, 40)
+    Theme.BtnHover       = Color3.fromRGB(60, 60, 60)
+    Theme.BtnOn          = Color3.fromRGB(80, 80, 80)
+    Theme.Stroke         = Color3.fromRGB(150, 150, 150)
+    Theme.TextDim        = Color3.fromRGB(180, 180, 180)
+    Theme.TextBright     = Color3.fromRGB(255, 255, 255)
+    Theme.DiscordBg      = Color3.fromRGB(25, 25, 25)
 end
 
-local ACCENT = Theme.Accent
-local ACCENT_DARK = Theme.AccentDark
-local ACCENT_GLOW = Theme.AccentGlow
-local HEADER_BG = Theme.HeaderBg
-local HEADER_BG_2 = Theme.HeaderBg2
-local BG_MAIN = Theme.BgMain
-local BG_MAIN_2 = Theme.BgMain2
-local BG_BTN = Theme.BtnBg
-local BG_BTN_HOVER = Theme.BtnHover
-local BG_BTN_ON = Theme.BtnOn
-local BG_BTN_ON_HOV = Theme.BtnHover
-local STROKE = Theme.Stroke
-local TEXT_DIM = Theme.TextDim
-local TEXT_BRIGHT = Theme.TextBright
-local GREEN = Color3.fromRGB(100, 240, 100)
-local GREEN_DARK = Color3.fromRGB(30, 100, 30)
-local RED = Color3.fromRGB(200, 50, 50)
-local RED_DARK = Color3.fromRGB(100, 20, 20)
-local YELLOW = Color3.fromRGB(200, 220, 100)
+local ACCENT         = Theme.Accent
+local ACCENT_DARK    = Theme.AccentDark
+local ACCENT_GLOW    = Theme.AccentGlow
+local HEADER_BG      = Theme.HeaderBg
+local HEADER_BG_2    = Theme.HeaderBg2
+local BG_MAIN        = Theme.BgMain
+local BG_MAIN_2      = Theme.BgMain2
+local BG_BTN         = Theme.BtnBg
+local BG_BTN_HOVER   = Theme.BtnHover
+local BG_BTN_ON      = Theme.BtnOn
+local BG_BTN_ON_HOV  = Theme.BtnHover
+local STROKE         = Theme.Stroke
+local TEXT_DIM       = Theme.TextDim
+local TEXT_BRIGHT    = Theme.TextBright
+local GREEN          = Color3.fromRGB(100, 240, 100)
+local RED            = Color3.fromRGB(200, 50, 50)
+local RED_DARK       = Color3.fromRGB(100, 20, 20)
+local YELLOW         = Color3.fromRGB(200, 220, 100)
 
-local HEIGHT_QUESTS = 360
-local HEIGHT_TABS = 380
-local HEIGHT_PAINEL_BASE = HEIGHT_QUESTS - 56
-
-local HEIGHT_DISCORD_BASE = 50
+local HEIGHT_QUESTS         = 360
+local HEIGHT_TABS           = 380
+local HEIGHT_PAINEL_BASE    = HEIGHT_QUESTS - 56
+local HEIGHT_DISCORD_BASE   = 50
 local HEIGHT_DISCORD_EXPANDIDO = 92
 
-if coreGui:FindFirstChild("AutoHalloweenUI") then
-    coreGui.AutoHalloweenUI:Destroy()
-end
-if coreGui:FindFirstChild("HalloweenIntro") then
-    coreGui.HalloweenIntro:Destroy()
+-- limpeza
+if coreGui then
+    for _, n in ipairs({"AutoHalloweenUI", "HalloweenIntro"}) do
+        local old = coreGui:FindFirstChild(n)
+        if old then pcall(function() old:Destroy() end) end
+    end
 end
 
-LocalPlayer.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new(0, 0))
+-- anti-afk
+task.spawn(function()
+    pcall(function()
+        LocalPlayer.Idled:Connect(function()
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new(0, 0))
+            end)
+        end)
+    end)
 end)
 
-game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
+pcall(function()
+    game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
+end)
 
+-- ============================================================
+-- HELPERS DE UI
+-- ============================================================
 local function makeCorner(p, r)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, r or 8)
@@ -247,6 +314,7 @@ local function makeGradient3(p, c1, c2, c3, rot)
 end
 
 local function tween(o, p, t, s)
+    if not o then return end
     local info = TweenInfo.new(t or 0.2, s or Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
     local tw = TweenService:Create(o, info, p)
     tw:Play()
@@ -255,49 +323,86 @@ end
 
 local function addPadding(parent, top, left, right, bottom)
     local p = Instance.new("UIPadding")
-    p.PaddingTop = UDim.new(0, top or 0)
-    p.PaddingLeft = UDim.new(0, left or 0)
-    p.PaddingRight = UDim.new(0, right or 0)
+    p.PaddingTop    = UDim.new(0, top or 0)
+    p.PaddingLeft   = UDim.new(0, left or 0)
+    p.PaddingRight  = UDim.new(0, right or 0)
     p.PaddingBottom = UDim.new(0, bottom or 0)
     p.Parent = parent
     return p
 end
 
-local rainbowConnections = {}
-local function ApplyRainbow(textLabel, isBold)
-    textLabel.Font = isBold and Enum.Font.GothamBlack or Enum.Font.GothamBold
-    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    
-    local grad = Instance.new("UIGradient")
-    grad.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
-    grad.Parent = textLabel
-    
-    local time = 0
-    local conn = RunService.RenderStepped:Connect(function(dt)
-        time = time + dt
-        local hueOffset = (time * 0.3) % 1
-        local cs = {}
-        for i = 0, 5 do
-            local hue = (i / 6 + hueOffset) % 1
-            table.insert(cs, ColorSequenceKeypoint.new(i / 5, Color3.fromHSV(hue, 0.8, 1)))
+-- ============================================================
+-- REMOTE HELPER SEGURO (FindFirstChild primeiro, WaitForChild curto)
+-- ============================================================
+local function getRemote(path, timeout)
+    timeout = timeout or 1.5
+    local ok, res = pcall(function()
+        local cur = ReplicatedStorage
+        for i, seg in ipairs(path) do
+            if not cur then return nil end
+            local child = cur:FindFirstChild(seg)
+            if not child and i == #path then
+                child = cur:WaitForChild(seg, timeout)
+            elseif not child then
+                child = cur:WaitForChild(seg, timeout)
+            end
+            if not child then return nil end
+            cur = child
         end
-        grad.Color = ColorSequence.new(cs)
+        return cur
     end)
-    table.insert(rainbowConnections, conn)
+    if ok then return res end
+    return nil
 end
 
+-- ============================================================
+-- RAINBOW TEXT
+-- ============================================================
+local rainbowConnections = {}
+local function ApplyRainbow(textLabel, isBold)
+    pcall(function()
+        textLabel.Font = isBold and Enum.Font.GothamBlack or Enum.Font.GothamBold
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+        local oldGrad = textLabel:FindFirstChildOfClass("UIGradient")
+        if oldGrad then oldGrad:Destroy() end
+
+        local grad = Instance.new("UIGradient")
+        grad.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
+        grad.Parent = textLabel
+
+        local time = 0
+        local conn = RunService.RenderStepped:Connect(function(dt)
+            time = time + dt
+            local hueOffset = (time * 0.3) % 1
+            local cs = {}
+            for i = 0, 5 do
+                local hue = (i / 6 + hueOffset) % 1
+                table.insert(cs, ColorSequenceKeypoint.new(i / 5, Color3.fromHSV(hue, 0.8, 1)))
+            end
+            pcall(function() grad.Color = ColorSequence.new(cs) end)
+        end)
+        table.insert(rainbowConnections, conn)
+    end)
+end
+
+-- ============================================================
+-- TELEPORTES E POSIÇÕES
+-- ============================================================
 local function TeleportarParaPosicao(pos)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
+    pcall(function()
+        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+        hrp.AssemblyLinearVelocity  = Vector3.new(0, 0, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    end)
 end
 
 local POS_GRADE = Vector3.new(254, 5, 90)
 local POS_TRAIT = Vector3.new(317, 5, 88)
-local DIST_MAX = 20
+local DIST_MAX  = 20
 
 local function EstaPerto(pos)
     local char = LocalPlayer.Character
@@ -308,11 +413,9 @@ end
 
 local tpIslandTime = 0
 local function TeleportarParaIlha()
-    local Event = ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("HalloweenService") and ReplicatedStorage.Network.HalloweenService:FindFirstChild("RF") and ReplicatedStorage.Network.HalloweenService.RF:FindFirstChild("Teleport")
-    if Event then
-        pcall(function()
-            Event:InvokeServer("Island")
-        end)
+    local ev = getRemote({"Network", "HalloweenService", "RF", "Teleport"}, 2)
+    if ev then
+        pcall(function() ev:InvokeServer("Island") end)
         tpIslandTime = tick()
     end
 end
@@ -322,44 +425,70 @@ task.spawn(function()
     TeleportarParaIlha()
 end)
 
+-- ============================================================
+-- TOWER STATE
+-- ============================================================
 local isAutoRotateTowerRunning = false
-local torreFinalizada = false
-local ultimoFloor = 0
-local achouAndar = false
-local cancelTowerRF = nil
-local completeTowerRF = nil
+local torreFinalizada          = false
+local ultimoFloor              = 0
+local achouAndar               = false
 
-pcall(function()
-    completeTowerRF = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Towers"):WaitForChild("RF"):WaitForChild("CompleteTowerFloor")
-    cancelTowerRF = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Towers"):WaitForChild("RF"):WaitForChild("CancelTower")
-end)
+local completeTowerRF = getRemote({"Network", "Towers", "RF", "CompleteTowerFloor"}, 2)
+local cancelTowerRF   = getRemote({"Network", "Towers", "RF", "CancelTower"}, 2)
+local playTowerRF     = getRemote({"Network", "Towers", "RF", "PlayTower"}, 2)
 
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    if getnamecallmethod() == "InvokeServer" and self == completeTowerRF then
-        local result = oldNamecall(self, ...)
-        if result then
-            local texto = tostring(result)
-            if string.find(texto, "destroyed") or string.find(texto, "ended") or string.find(texto, "memberDefeated") then
-                torreFinalizada = true
-            elseif type(result) == "table" and type(result[1]) == "table" then
-                for _, evento in ipairs(result[1]) do
-                    if type(evento) == "table" and evento.action == "floorCompleted" then
-                        if (evento.floor or 0) > ultimoFloor then
-                            ultimoFloor = evento.floor
-                            achouAndar = true
+local GradeRollEvent = getRemote({"Network", "GradeService", "RE", "Roll"}, 2)
+local TraitRollEvent = getRemote({"Network", "TraitService", "RE", "Roll"}, 2)
+
+-- Hook único com pcall + fallback polling
+local hookOK = pcall(function()
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+
+        if method == "InvokeServer" and completeTowerRF and self == completeTowerRF then
+            local result = oldNamecall(self, ...)
+            if result then
+                local texto = tostring(result)
+                if string.find(texto, "destroyed") or string.find(texto, "ended") or string.find(texto, "memberDefeated") then
+                    torreFinalizada = true
+                elseif type(result) == "table" and type(result[1]) == "table" then
+                    for _, evento in ipairs(result[1]) do
+                        if type(evento) == "table" and evento.action == "floorCompleted" then
+                            if (evento.floor or 0) > ultimoFloor then
+                                ultimoFloor = evento.floor
+                                achouAndar  = true
+                            end
                         end
                     end
                 end
             end
+            return result
         end
-        return result
-    end
-    return oldNamecall(self, ...)
+
+        if method == "FireServer" and (self == GradeRollEvent or self == TraitRollEvent) then
+            local args = {...}
+            local uuidRollado = args[1]
+            if uuidRollado ~= nil and _G.__refreshListaRoll then
+                task.delay(0.05, function()
+                    pcall(_G.__refreshListaRoll, uuidRollado)
+                end)
+            end
+        end
+
+        return oldNamecall(self, ...)
+    end)
 end)
 
+if not hookOK then
+    log("hookmetamethod falhou, usando polling fallback")
+end
+
+-- ============================================================
+-- MATRIZ (unit scan)
+-- ============================================================
 local isEquipRunning = false
-local MatrizSalva = nil
+local MatrizSalva    = nil
 
 local function EhValida(tab)
     if type(tab) ~= "table" or tab == _G or tab == shared or tab == game then
@@ -367,13 +496,9 @@ local function EhValida(tab)
     end
     local ok, mt = pcall(getmetatable, tab)
     if ok and mt then
-        if type(mt) == "string" then
-            return false
-        end
+        if type(mt) == "string" then return false end
         if type(mt) == "table" then
-            if pcall(rawget, mt, "__index") then
-                return false
-            end
+            if pcall(rawget, mt, "__index") then return false end
             local ok3, s = pcall(tostring, mt)
             if ok3 and s and (s:match("Connection") or s:match("Signal")) then
                 return false
@@ -386,15 +511,15 @@ end
 local function BuscarMatriz()
     local m = nil
     pcall(function()
-        for _, obj in pairs(getgc(true)) do
+        local gc = getgc and getgc(true)
+        if not gc then return end
+        for _, obj in pairs(gc) do
             if EhValida(obj) then
                 local found = false
                 local count = 0
                 for k, v in pairs(obj) do
                     count = count + 1
-                    if count > 10 then
-                        break
-                    end
+                    if count > 10 then break end
                     if type(v) == "table" then
                         local isUnit = false
                         local nameFound = ""
@@ -414,7 +539,7 @@ local function BuscarMatriz()
                 end
                 if found then
                     m = obj
-                    return m
+                    break
                 end
             end
         end
@@ -423,66 +548,49 @@ local function BuscarMatriz()
 end
 
 local function LerQuirkDoBoneco(d)
-    if type(d) ~= "table" then
-        return nil
-    end
-    local r = nil
+    if type(d) ~= "table" then return nil end
     for k, v in pairs(d) do
         if type(k) == "string" and k:lower():find("quirk") then
-            if type(v) == "string" and v ~= "" then
-                r = v
-                return r
-            end
+            if type(v) == "string" and v ~= "" then return v end
             if type(v) == "table" then
                 for k2, v2 in pairs(v) do
                     if type(k2) == "string" and k2:lower() == "quirk" and type(v2) == "string" then
-                        r = v2
-                        return r
+                        return v2
                     end
                 end
-                if type(v.Name) == "string" then
-                    r = v.Name
-                    return r
-                end
-                if type(v.name) == "string" then
-                    r = v.name
-                    return r
-                end
+                if type(v.Name) == "string" then return v.Name end
+                if type(v.name) == "string" then return v.name end
             end
         end
-    end
-    if r then
-        return r
     end
     for _, v in pairs(d) do
         if type(v) == "table" and v ~= d then
             for k2, v2 in pairs(v) do
                 if type(k2) == "string" and k2:lower():find("quirk") and type(v2) == "string" and v2 ~= "" then
-                    r = v2
-                    return r
+                    return v2
                 end
             end
         end
     end
-    return r
+    return nil
 end
 
+-- ============================================================
+-- PLOT HELPERS
+-- ============================================================
 local function AcharMinhaPlot()
     local Plots = workspace:FindFirstChild("Plots")
-    if not Plots then
-        return nil
-    end
+    if not Plots then return nil end
     local Claimed = Plots:FindFirstChild("Claimed")
-    if not Claimed then
-        return nil
-    end
+    if not Claimed then return nil end
     for _, plot in pairs(Claimed:GetChildren()) do
         local label = plot:FindFirstChild("Label")
         if label then
             local billboard = label:FindFirstChild("BillboardGui")
             if billboard then
-                local playerNameLabel = billboard:FindFirstChild("PlayerName")
-                if playerNameLabel and playerNameLabel:IsA("TextLabel") and (playerNameLabel.Text == LocalPlayer.DisplayName or playerNameLabel.Text == LocalPlayer.Name) then
+                local pName = billboard:FindFirstChild("PlayerName")
+                if pName and pName:IsA("TextLabel")
+                   and (pName.Text == LocalPlayer.DisplayName or pName.Text == LocalPlayer.Name) then
                     return plot
                 end
             end
@@ -500,43 +608,32 @@ end
 
 local function GetMaxSlots()
     local p = AcharMinhaPlot()
-    if not p then
-        return 18
-    end
+    if not p then return 18 end
     local s = p:FindFirstChild("Slots")
-    if not s then
-        return 18
-    end
+    if not s then return 18 end
     local m = 0
     for _, o in pairs(s:GetChildren()) do
         local n = tonumber(o.Name)
-        if n and n > m then
-            m = n
-        end
+        if n and n > m then m = n end
     end
     return m > 0 and m or 18
 end
 
 local function UUIDNoSlot(plot, slotNum, uuid)
-    if not plot then
-        return false
-    end
+    if not plot then return false end
     local slots = plot:FindFirstChild("Slots")
-    if not slots then
-        return false
-    end
+    if not slots then return false end
     local slotObj = slots:FindFirstChild(tostring(slotNum))
-    if not slotObj then
-        return false
-    end
+    if not slotObj then return false end
     for _, filho in ipairs(slotObj:GetChildren()) do
-        if tostring(filho.Name) == tostring(uuid) then
-            return true
-        end
+        if tostring(filho.Name) == tostring(uuid) then return true end
     end
     return false
 end
 
+-- ============================================================
+-- PATHFINDING
+-- ============================================================
 local fixedCoords = {
     Vector3.new(-1916, -19, 11268),
     Vector3.new(-1994, -19, 11361),
@@ -546,156 +643,153 @@ local fixedCoords = {
     Vector3.new(-1806, -19, 11323),
     Vector3.new(-1799, -19, 11362)
 }
-local pontoPassagem = Vector3.new(-1948, -20, 11320)
+local pontoPassagem    = Vector3.new(-1948, -20, 11320)
 local TEMPO_ENTRE_CASAS = 0.2
 local lastTeleportTime = 0
-local isAutoTPRunning = false
+local isAutoTPRunning  = false
 
 local function IgnorarObjetosPrioritarios()
-    local halloween = workspace:FindFirstChild("Halloween")
-    if not halloween then
-        return
-    end
-    local mapH = halloween:FindFirstChild("MapHalloween")
-    if mapH and mapH:GetChildren()[5] then
-        for _, v in pairs(mapH:GetChildren()[5]:GetDescendants()) do
-            if v:IsA("BasePart") then
-                local mod = Instance.new("PathfindingModifier")
-                mod.Label = "Prioridade"
-                mod.Parent = v
+    pcall(function()
+        local halloween = workspace:FindFirstChild("Halloween")
+        if not halloween then return end
+        local mapH = halloween:FindFirstChild("MapHalloween")
+        if mapH then
+            local c5 = mapH:GetChildren()[5]
+            if c5 then
+                for _, v in pairs(c5:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        local mod = Instance.new("PathfindingModifier")
+                        mod.Label = "Prioridade"
+                        mod.Parent = v
+                    end
+                end
             end
         end
-    end
-    local hC = halloween:GetChildren()
-    if hC[7] and hC[7]:GetChildren()[30] then
-        for _, v in pairs(hC[7]:GetChildren()[30]:GetDescendants()) do
-            if v:IsA("BasePart") then
-                local mod = Instance.new("PathfindingModifier")
-                mod.Label = "Prioridade"
-                mod.Parent = v
+        local hC = halloween:GetChildren()
+        if hC[7] then
+            local c30 = hC[7]:GetChildren()[30]
+            if c30 then
+                for _, v in pairs(c30:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        local mod = Instance.new("PathfindingModifier")
+                        mod.Label = "Prioridade"
+                        mod.Parent = v
+                    end
+                end
             end
         end
-    end
-    for _, obj in pairs(halloween:GetDescendants()) do
-        if obj:IsA("BasePart") and string.sub(obj.Name, 1, 2) == "1S" and obj.Name ~= "1S_StoneBase" then
-            local mod = Instance.new("PathfindingModifier")
-            mod.Label = "Prioridade"
-            mod.Parent = obj
+        for _, obj in pairs(halloween:GetDescendants()) do
+            if obj:IsA("BasePart") and string.sub(obj.Name, 1, 2) == "1S" and obj.Name ~= "1S_StoneBase" then
+                local mod = Instance.new("PathfindingModifier")
+                mod.Label = "Prioridade"
+                mod.Parent = obj
+            end
         end
-    end
+    end)
 end
-pcall(IgnorarObjetosPrioritarios)
+task.spawn(function() pcall(IgnorarObjetosPrioritarios) end)
 
 local function getSignPosition(s)
-    if s:IsA("Attachment") and s.WorldPosition and s.WorldPosition.Magnitude > 0 then
-        return s.WorldPosition
+    if not s then return nil end
+    if s:IsA("Attachment") then
+        local ok, wp = pcall(function() return s.WorldPosition end)
+        if ok and wp and wp.Magnitude > 0 then return wp end
+        if s.Parent then
+            local ok2, p = pcall(function() return (s.Parent.CFrame * s.CFrame).Position end)
+            if ok2 then return p end
+        end
     end
-    if s:IsA("Attachment") and s.Parent then
-        return (s.Parent.CFrame * s.CFrame).Position
-    end
+    return nil
 end
 
 local function findAllSigns()
     local f = {}
-    for _, obj in pairs(workspace.Terrain:GetDescendants()) do
-        if obj.Name == "TrickOrTreatSign" and obj:IsA("Attachment") then
-            local b = obj:FindFirstChild("TrickOrTreatSign")
-            if b and b:FindFirstChild("Content") then
-                local t = b.Content:FindFirstChild("Title")
-                if t and t:IsA("TextLabel") then
-                    table.insert(f, { attachment = obj, titleLabel = t })
+    pcall(function()
+        local terrain = workspace:FindFirstChild("Terrain")
+        if not terrain then return end
+        for _, obj in pairs(terrain:GetDescendants()) do
+            if obj.Name == "TrickOrTreatSign" and obj:IsA("Attachment") then
+                local b = obj:FindFirstChild("TrickOrTreatSign")
+                if b and b:FindFirstChild("Content") then
+                    local t = b.Content:FindFirstChild("Title")
+                    if t and t:IsA("TextLabel") then
+                        table.insert(f, { attachment = obj, titleLabel = t })
+                    end
                 end
             end
         end
-    end
+    end)
     return f
 end
 
 local function encontrarRota(origem, destino)
     for _, r in ipairs({4.5, 2.0, 1.0, 0.5}) do
-        local path = PathfindingService:CreatePath({
-            AgentRadius = r,
-            AgentHeight = 5,
-            AgentCanJump = false,
-            WaypointSpacing = 4
-        })
-        pcall(function()
-            path:ComputeAsync(origem, destino)
+        local ok, path = pcall(function()
+            local p = PathfindingService:CreatePath({
+                AgentRadius   = r,
+                AgentHeight   = 5,
+                AgentCanJump  = false,
+                WaypointSpacing = 4
+            })
+            p:ComputeAsync(origem, destino)
+            return p
         end)
-        if path.Status == Enum.PathStatus.Success then
+        if ok and path and path.Status == Enum.PathStatus.Success then
             return path
         end
     end
+    return nil
 end
 
 local function moverComPathfinding(destino)
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        return false
-    end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
     local dist = (hrp.Position - destino).Magnitude
     local tempo = dist > 150 and 1.4 or 0.6
     local lista = {}
+
     if dist > 100 and (destino - pontoPassagem).Magnitude < 150 then
         local p1 = encontrarRota(hrp.Position, pontoPassagem)
         if p1 then
-            for _, w in ipairs(p1:GetWaypoints()) do
-                table.insert(lista, w)
-            end
+            for _, w in ipairs(p1:GetWaypoints()) do table.insert(lista, w) end
         end
         local p2 = encontrarRota(pontoPassagem, destino)
         if p2 then
             local w2 = p2:GetWaypoints()
-            for i = 2, #w2 do
-                table.insert(lista, w2[i])
-            end
+            for i = 2, #w2 do table.insert(lista, w2[i]) end
         end
     else
         local p = encontrarRota(hrp.Position, destino)
         if p then
-            for _, w in ipairs(p:GetWaypoints()) do
-                table.insert(lista, w)
-            end
+            for _, w in ipairs(p:GetWaypoints()) do table.insert(lista, w) end
         end
     end
+
     if #lista > 1 then
-        local cv = Instance.new("CFrameValue")
-        cv.Value = hrp.CFrame
-        local conn = cv:GetPropertyChangedSignal("Value"):Connect(function()
-            if hrp then
-                hrp.CFrame = cv.Value
-            end
-        end)
         local t0 = tick()
-        local c
-        c = RunService.RenderStepped:Connect(function()
-            task.wait(0.03)
+        local conn = RunService.RenderStepped:Connect(function()
+            if not hrp or not hrp.Parent then return end
             local pct = math.clamp((tick() - t0) / tempo, 0, 1)
-            if pct >= 1 then
-                hrp.CFrame = CFrame.new(lista[#lista].Position + Vector3.new(0, 1, 0))
-                c:Disconnect()
-                return
-            end
+            if pct >= 1 then return end
             local fake = pct * (#lista - 1)
             local idx = math.floor(fake) + 1
             local f = fake - math.floor(fake)
-            if idx >= #lista then
-                idx = #lista - 1
-                f = 1
-            end
+            if idx >= #lista then idx = #lista - 1; f = 1 end
             local pA = lista[idx].Position + Vector3.new(0, 1, 0)
             local pB = lista[idx + 1].Position + Vector3.new(0, 1, 0)
             local pos = pA:Lerp(pB, f)
-            hrp.CFrame = CFrame.new(pos) * CFrame.lookAt(pos, pB).Rotation
+            pcall(function()
+                hrp.CFrame = CFrame.new(pos) * CFrame.lookAt(pos, pB).Rotation
+            end)
         end)
-        task.wait(tempo)
-        if c then
-            c:Disconnect()
-        end
-        hrp.CFrame = CFrame.new(lista[#lista].Position + Vector3.new(0, 1, 0))
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        conn:Disconnect()
-        cv:Destroy()
+        local tEnd = tick() + tempo + 0.3
+        while tick() < tEnd do task.wait(0.03) end
+        if conn then conn:Disconnect() end
+        pcall(function()
+            hrp.CFrame = CFrame.new(lista[#lista].Position + Vector3.new(0, 1, 0))
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end)
         task.wait(0.1)
         return (hrp.Position - destino).Magnitude < 20
     else
@@ -704,46 +798,57 @@ local function moverComPathfinding(destino)
         local tw = TweenService:Create(hrp, TweenInfo.new(math.clamp(dist / 100, 0.5, 2.0)), { CFrame = CFrame.new(target) })
         tw:Play()
         tw.Completed:Wait()
-        hrp.CFrame = CFrame.new(target)
-        hrp.AssemblyLinearVelocity = Vector3.zero
+        pcall(function()
+            hrp.CFrame = CFrame.new(target)
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end)
         hrp.CanCollide = true
         task.wait(0.1)
         return (hrp.Position - destino).Magnitude < 20
     end
 end
 
+-- ============================================================
+-- LOOP DOORS
+-- ============================================================
 local casasVisitadas = {}
+local doorsLoopRunning = false
+
 local function LoopDoors()
+    if doorsLoopRunning then return end
+    doorsLoopRunning = true
     task.spawn(function()
         while isAutoTPRunning do
             task.wait(0.1)
-            if not workspace:FindFirstChild("Halloween") or tick() - lastTeleportTime <= TEMPO_ENTRE_CASAS then
+            local halloween = workspace:FindFirstChild("Halloween")
+            if not halloween or tick() - lastTeleportTime <= TEMPO_ENTRE_CASAS then
                 continue
             end
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then
-                task.wait(0.5)
-                continue
-            end
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then task.wait(0.5); continue end
             local ativos = {}
             for _, d in ipairs(findAllSigns()) do
-                if d.attachment.Parent and d.titleLabel.Parent and string.lower(d.titleLabel.Text):gsub("[^%a%s]", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "") == "trick or treat" then
-                    local pos = getSignPosition(d.attachment)
-                    if pos and (hrp.Position - pos).Magnitude > 20 then
-                        local chave = tostring(math.floor(pos.X)) .. "_" .. tostring(math.floor(pos.Z))
-                        if not casasVisitadas[chave] then
-                            table.insert(ativos, { pos = pos, dist = (hrp.Position - pos).Magnitude, chave = chave })
+                if d.attachment.Parent and d.titleLabel.Parent then
+                    local titulo = string.lower(d.titleLabel.Text or "")
+                    titulo = titulo:gsub("[^%a%s]", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+                    if titulo == "trick or treat" then
+                        local pos = getSignPosition(d.attachment)
+                        if pos and (hrp.Position - pos).Magnitude > 20 then
+                            local chave = tostring(math.floor(pos.X)) .. "_" .. tostring(math.floor(pos.Z))
+                            if not casasVisitadas[chave] then
+                                table.insert(ativos, { pos = pos, dist = (hrp.Position - pos).Magnitude, chave = chave })
+                            end
                         end
                     end
                 end
             end
             if #ativos == 0 then
                 casasVisitadas = {}
+                task.wait(0.5)
                 continue
             end
-            table.sort(ativos, function(a, b)
-                return a.dist < b.dist
-            end)
+            table.sort(ativos, function(a, b) return a.dist < b.dist end)
             local c = nil
             local d = math.huge
             for _, coord in ipairs(fixedCoords) do
@@ -759,15 +864,15 @@ local function LoopDoors()
                 lastTeleportTime = tick()
             end
         end
+        doorsLoopRunning = false
     end)
 end
 
 local function EstaNoEvento()
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local h = workspace:FindFirstChild("Halloween")
-    if not h or not hrp then
-        return false
-    end
+    if not h or not hrp then return false end
     for _, obj in pairs(h:GetDescendants()) do
         if obj:IsA("BasePart") and (hrp.Position - obj.Position).Magnitude < 150 then
             return true
@@ -776,10 +881,12 @@ local function EstaNoEvento()
     return false
 end
 
-local WIDTH_NORMAL = 200
+-- ============================================================
+-- SCREENGUI
+-- ============================================================
+local WIDTH_NORMAL   = 200
 local WIDTH_EXPANDED = 232
-
-local Y_POS_BASE = -((HEIGHT_PAINEL_BASE) / 2)
+local Y_POS_BASE  = -((HEIGHT_PAINEL_BASE) / 2)
 local Y_POS_ABERTO = -(HEIGHT_QUESTS / 2)
 
 local ScreenGui = Instance.new("ScreenGui")
@@ -795,7 +902,7 @@ bgImage.Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_PAINEL_BASE)
 bgImage.Position = UDim2.new(0, 10, 0.5, Y_POS_BASE)
 bgImage.BackgroundColor3 = BG_MAIN
 bgImage.BorderSizePixel = 0
-bgImage.Image = Theme.UiBg
+bgImage.Image = Theme.UiBg or ""
 bgImage.ScaleType = Enum.ScaleType.Crop
 bgImage.ZIndex = 1
 bgImage.Parent = ScreenGui
@@ -848,24 +955,23 @@ minimizeBtn.Parent = header
 makeCorner(minimizeBtn, 6)
 makeStroke(minimizeBtn, ACCENT, 1, 0.4)
 
-local dragging = false
+-- drag
+local dragging  = false
 local dragStart = nil
-local startPos = nil
+local startPos  = nil
 
 header.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
+        dragging  = true
         dragStart = i.Position
-        startPos = mainFrame.Position
+        startPos  = mainFrame.Position
     end
 end)
-
 header.InputEnded:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
         dragging = false
     end
 end)
-
 UserInputService.InputChanged:Connect(function(i)
     if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
         local d = i.Position - dragStart
@@ -874,11 +980,14 @@ UserInputService.InputChanged:Connect(function(i)
     end
 end)
 
+-- ============================================================
+-- TABS
+-- ============================================================
 local TABS = {
     { text = "QUESTS", id = "quests" },
-    { text = "EQUIP", id = "equip" },
-    { text = "TOWER", id = "tower" },
-    { text = "ROLL", id = "roll" }
+    { text = "EQUIP",  id = "equip"  },
+    { text = "TOWER",  id = "tower"  },
+    { text = "ROLL",   id = "roll"   }
 }
 local tabButtons = {}
 local currentTab = "quests"
@@ -913,18 +1022,17 @@ for i, t in ipairs(TABS) do
     local s = makeStroke(btn, STROKE, 1, 0.5)
     tabButtons[t.id] = { btn = btn, stroke = s }
     btn.MouseEnter:Connect(function()
-        if currentTab ~= t.id then
-            tween(btn, { BackgroundColor3 = BG_BTN_HOVER }, 0.15)
-        end
+        if currentTab ~= t.id then tween(btn, { BackgroundColor3 = BG_BTN_HOVER }, 0.15) end
     end)
     btn.MouseLeave:Connect(function()
-        if currentTab ~= t.id then
-            tween(btn, { BackgroundColor3 = BG_BTN }, 0.15)
-        end
+        if currentTab ~= t.id then tween(btn, { BackgroundColor3 = BG_BTN }, 0.15) end
     end)
 end
 
-local PAGE_TOP = 62
+-- ============================================================
+-- PAGES
+-- ============================================================
+local PAGE_TOP           = 62
 local PAGE_BOTTOM_OFFSET = 90
 local function calcPageHeight()
     return HEIGHT_TABS - PAGE_TOP - PAGE_BOTTOM_OFFSET
@@ -961,6 +1069,7 @@ PageRoll.Visible = false
 PageRoll.ZIndex = 5
 PageRoll.Parent = mainFrame
 
+-- status bar
 local sf = Instance.new("Frame")
 sf.Size = UDim2.new(1, -20, 0, 22)
 sf.AnchorPoint = Vector2.new(0, 1)
@@ -994,6 +1103,7 @@ statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 statusLabel.ZIndex = 5
 statusLabel.Parent = sf
 
+-- discord card
 local discordContainer = Instance.new("Frame")
 discordContainer.Size = UDim2.new(1, -20, 0, HEIGHT_DISCORD_BASE)
 discordContainer.AnchorPoint = Vector2.new(0, 1)
@@ -1086,9 +1196,10 @@ obText.TextSize = 8
 obText.ZIndex = 6
 obText.Parent = ownerBadge
 
+-- rp frame
 local rpFrame = Instance.new("Frame")
 rpFrame.Size = UDim2.new(1, -16, 0, 34)
-rpFrame.Position = UDim2.new(0, 8, 0, 50) 
+rpFrame.Position = UDim2.new(0, 8, 0, 50)
 rpFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 rpFrame.BackgroundTransparency = 0
 rpFrame.ZIndex = 5
@@ -1161,6 +1272,7 @@ rpTempo.TextXAlignment = Enum.TextXAlignment.Right
 rpTempo.ZIndex = 6
 rpTempo.Parent = rpFrame
 
+-- notificação
 local notifyGui = Instance.new("Frame")
 notifyGui.Size = UDim2.new(0, 220, 0, 36)
 notifyGui.Position = UDim2.new(0.5, -110, 0, -50)
@@ -1201,15 +1313,32 @@ local function fmtDecorrido(seg)
     return string.format("%dd %dh", math.floor(seg/86400), math.floor((seg%86400)/3600))
 end
 
+local function mostrarNotificacao(texto, cor)
+    nLabel.Text = texto
+    notifyStroke.Color = cor or ACCENT_GLOW
+    nBar.BackgroundColor3 = cor or ACCENT_GLOW
+    tween(notifyGui, { Position = UDim2.new(0.5, -110, 0, 20) }, 0.4)
+    task.delay(3, function()
+        tween(notifyGui, { Position = UDim2.new(0.5, -110, 0, -50) }, 0.4)
+    end)
+end
+
+local function setStatus(text, color)
+    statusLabel.Text = text
+    statusLabel.TextColor3 = color or ACCENT_GLOW
+    if color then tween(statusDot, { BackgroundColor3 = color }, 0.15) end
+end
+
+-- ============================================================
+-- LANYARD
+-- ============================================================
 local rpAberta = false
 
 local function atualizarDiscord()
     local timestamp = DateTime.now().UnixTimestampMillis
     local url = "https://api.lanyard.rest/v1/users/" .. MeuDiscordID .. "?t=" .. timestamp
-    
-    local ok, resposta = pcall(function()
-        return game:HttpGet(url, true)
-    end)
+
+    local ok, resposta = pcall(function() return game:HttpGet(url, true) end)
     if not ok then return end
 
     local okJson, dados = pcall(function() return HttpService:JSONDecode(resposta) end)
@@ -1219,13 +1348,7 @@ local function atualizarDiscord()
     local u = d.discord_user
     local st = STATUS[d.discord_status] or STATUS.offline
 
-    if ultimoStatus == nil then
-        nLabel.Text = (u.global_name or u.display_name or u.username) .. " " .. st[3]
-        tween(notifyGui, { Position = UDim2.new(0.5, -110, 0, 20) }, 0.4)
-        task.delay(4, function()
-            tween(notifyGui, { Position = UDim2.new(0.5, -110, 0, -50) }, 0.4)
-        end)
-    elseif ultimoStatus ~= d.discord_status then
+    if ultimoStatus == nil or ultimoStatus ~= d.discord_status then
         nLabel.Text = (u.global_name or u.display_name or u.username) .. " " .. st[3]
         tween(notifyGui, { Position = UDim2.new(0.5, -110, 0, 20) }, 0.4)
         task.delay(4, function()
@@ -1234,11 +1357,11 @@ local function atualizarDiscord()
     end
     ultimoStatus = d.discord_status
 
-    discordStroke.Color = st[1]
-    notifyStroke.Color = st[1]
+    discordStroke.Color   = st[1]
+    notifyStroke.Color    = st[1]
     nBar.BackgroundColor3 = st[1]
 
-    displayName.Text = u.global_name or u.display_name or u.username
+    displayName.Text   = u.global_name or u.display_name or u.username
     usernameLabel.Text = "@" .. u.username
 
     local clan = u.primary_guild or u.clan
@@ -1270,8 +1393,12 @@ local function atualizarDiscord()
     local principal = nil
     if d.listening_to_spotify and d.spotify then
         principal = {
-            type = 2, name = "Spotify", details = d.spotify.song, state = d.spotify.artist, album = d.spotify.album,
-            assets = { large_image = "spotify:" .. string.gsub(d.spotify.album_art_url or "", "https://i.scdn.co/image/", "") },
+            type       = 2,
+            name       = "Spotify",
+            details    = d.spotify.song,
+            state      = d.spotify.artist,
+            album      = d.spotify.album,
+            assets     = { large_image = "spotify:" .. string.gsub(d.spotify.album_art_url or "", "https://i.scdn.co/image/", "") },
             timestamps = d.spotify.timestamps
         }
     else
@@ -1287,29 +1414,27 @@ local function atualizarDiscord()
         if not rpAberta then
             rpAberta = true
             tween(mainFrame, { Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_QUESTS) }, 0.4, Enum.EasingStyle.Back)
-            tween(bgImage, { Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_QUESTS) }, 0.4, Enum.EasingStyle.Back)
+            tween(bgImage,   { Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_QUESTS) }, 0.4, Enum.EasingStyle.Back)
             tween(mainFrame, { Position = UDim2.new(0, 10, 0.5, Y_POS_ABERTO) }, 0.4, Enum.EasingStyle.Back)
-            tween(bgImage, { Position = UDim2.new(0, 10, 0.5, Y_POS_ABERTO) }, 0.4, Enum.EasingStyle.Back)
-            
+            tween(bgImage,   { Position = UDim2.new(0, 10, 0.5, Y_POS_ABERTO) }, 0.4, Enum.EasingStyle.Back)
             tween(discordContainer, { Size = UDim2.new(1, -20, 0, HEIGHT_DISCORD_EXPANDIDO) }, 0.4, Enum.EasingStyle.Back)
         end
-
         rpFrame.Visible = true
 
-        local tipoTexto, corTipo = "JOGANDO", Color3.fromRGB(88,101,242)
+        local tipoTexto, corTipo = "JOGANDO", Color3.fromRGB(88, 101, 242)
         local subTexto = principal.state or ""
-        
-        if principal.type == 2 then 
+
+        if principal.type == 2 then
             tipoTexto, corTipo = "OUVINDO", VERDE_SPOTIFY
             subTexto = (principal.state or "") .. " • " .. (principal.album or "")
-        elseif principal.type == 1 then tipoTexto, corTipo = "TRANSMITINDO", Color3.fromRGB(180,70,200)
-        elseif principal.type == 3 then tipoTexto, corTipo = "ASSISTINDO", Color3.fromRGB(230,90,90)
-        elseif principal.type == 5 then tipoTexto, corTipo = "COMPETINDO", Color3.fromRGB(241,196,15) end
-        
+        elseif principal.type == 1 then tipoTexto, corTipo = "TRANSMITINDO", Color3.fromRGB(180, 70, 200)
+        elseif principal.type == 3 then tipoTexto, corTipo = "ASSISTINDO", Color3.fromRGB(230, 90, 90)
+        elseif principal.type == 5 then tipoTexto, corTipo = "COMPETINDO", Color3.fromRGB(241, 196, 15) end
+
         rpTipo.Text = tipoTexto
         rpTipo.TextColor3 = corTipo
         rpNome.Text = principal.details or principal.name or "Atividade"
-        rpSub.Text = subTexto
+        rpSub.Text  = subTexto
 
         local logo = obterLogoRP(principal)
         if logo then rpLogo.Image = logo; rpLogo.Visible = true else rpLogo.Visible = false end
@@ -1325,14 +1450,11 @@ local function atualizarDiscord()
         if rpAberta then
             rpAberta = false
             rpInicioMs = nil
-            
             tween(discordContainer, { Size = UDim2.new(1, -20, 0, HEIGHT_DISCORD_BASE) }, 0.4, Enum.EasingStyle.Back)
-            
             tween(mainFrame, { Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_PAINEL_BASE) }, 0.4, Enum.EasingStyle.Back)
-            tween(bgImage, { Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_PAINEL_BASE) }, 0.4, Enum.EasingStyle.Back)
+            tween(bgImage,   { Size = UDim2.new(0, WIDTH_NORMAL, 0, HEIGHT_PAINEL_BASE) }, 0.4, Enum.EasingStyle.Back)
             tween(mainFrame, { Position = UDim2.new(0, 10, 0.5, Y_POS_BASE) }, 0.4, Enum.EasingStyle.Back)
-            tween(bgImage, { Position = UDim2.new(0, 10, 0.5, Y_POS_BASE) }, 0.4, Enum.EasingStyle.Back)
-
+            tween(bgImage,   { Position = UDim2.new(0, 10, 0.5, Y_POS_BASE) }, 0.4, Enum.EasingStyle.Back)
             rpFrame.Visible = false
         end
     end
@@ -1353,37 +1475,65 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- ============================================================
+-- MINIMIZE + ANIMAÇÃO
+-- ============================================================
+local currentTargetWidth, currentTargetHeight = WIDTH_NORMAL, HEIGHT_PAINEL_BASE
+local isAnimatingSize = false
+local isMinimized = false
+
+local function animateSize(w, h)
+    currentTargetWidth  = w
+    currentTargetHeight = h
+    if isAnimatingSize then return end
+    isAnimatingSize = true
+    task.spawn(function()
+        while math.abs(mainFrame.Size.X.Offset - currentTargetWidth) > 1
+           or math.abs(mainFrame.Size.Y.Offset - currentTargetHeight) > 1 do
+            local cw = mainFrame.Size.X.Offset
+            local ch = mainFrame.Size.Y.Offset
+            local nw = cw + (currentTargetWidth - cw) * 0.25
+            local nh = ch + (currentTargetHeight - ch) * 0.25
+            if math.abs(nw - currentTargetWidth) < 1 then nw = currentTargetWidth end
+            if math.abs(nh - currentTargetHeight) < 1 then nh = currentTargetHeight end
+            mainFrame.Size = UDim2.new(0, nw, 0, nh)
+            bgImage.Size = mainFrame.Size
+            task.wait(0.02)
+        end
+        mainFrame.Size = UDim2.new(0, currentTargetWidth, 0, currentTargetHeight)
+        bgImage.Size = mainFrame.Size
+        isAnimatingSize = false
+    end)
+end
+
 local function setTab(id)
     currentTab = id
     for tid, data in pairs(tabButtons) do
         if tid == id then
             tween(data.btn, { BackgroundColor3 = HEADER_BG, TextColor3 = ACCENT_GLOW }, 0.2)
-            tween(data.stroke, { Transparency = 0.15, Color = ACCENT }, 0.2)
+            if data.stroke then
+                tween(data.stroke, { Transparency = 0.15, Color = ACCENT }, 0.2)
+            end
         else
             tween(data.btn, { BackgroundColor3 = BG_BTN, TextColor3 = TEXT_DIM }, 0.2)
-            tween(data.stroke, { Transparency = 0.5, Color = STROKE }, 0.2)
+            if data.stroke then
+                tween(data.stroke, { Transparency = 0.5, Color = STROKE }, 0.2)
+            end
         end
     end
     PageQuests.Visible = (id == "quests")
-    PageEquip.Visible = (id == "equip")
-    PageTower.Visible = (id == "tower")
-    PageRoll.Visible = (id == "roll")
+    PageEquip.Visible  = (id == "equip")
+    PageTower.Visible  = (id == "tower")
+    PageRoll.Visible   = (id == "roll")
 end
 
 for tid, data in pairs(tabButtons) do
-    data.btn.MouseButton1Click:Connect(function()
-        setTab(tid)
-    end)
+    data.btn.MouseButton1Click:Connect(function() setTab(tid) end)
 end
 
-local function setStatus(text, color)
-    statusLabel.Text = text
-    statusLabel.TextColor3 = color or ACCENT_GLOW
-    if color then
-        tween(statusDot, { BackgroundColor3 = color }, 0.15)
-    end
-end
-
+-- ============================================================
+-- HELPERS DE TOGGLE
+-- ============================================================
 local function makeToggleButton(parent, text, posY, height)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(1, -16, 0, height or 26)
@@ -1417,28 +1567,22 @@ local function makeToggleButton(parent, text, posY, height)
 end
 
 local function updateToggleVisual(data, isOn, textOn, textOff)
+    if not data or not data.btn then return end
     data.btn:SetAttribute("Active", isOn)
     if isOn then
         tween(data.btn, { BackgroundColor3 = BG_BTN_ON, TextColor3 = GREEN }, 0.2)
-        tween(data.stroke, { Color = GREEN, Transparency = 0.2 }, 0.2)
+        if data.stroke then tween(data.stroke, { Color = GREEN, Transparency = 0.2 }, 0.2) end
         data.btn.Text = textOn
     else
         tween(data.btn, { BackgroundColor3 = BG_BTN, TextColor3 = TEXT_DIM }, 0.2)
-        tween(data.stroke, { Color = STROKE, Transparency = 0.45 }, 0.2)
+        if data.stroke then tween(data.stroke, { Color = STROKE, Transparency = 0.45 }, 0.2) end
         data.btn.Text = textOff
     end
 end
 
-local function mostrarNotificacao(texto, cor)
-    nLabel.Text = texto
-    notifyStroke.Color = cor or ACCENT_GLOW
-    nBar.BackgroundColor3 = cor or ACCENT_GLOW
-    tween(notifyGui, { Position = UDim2.new(0.5, -110, 0, 20) }, 0.4)
-    task.delay(3, function()
-        tween(notifyGui, { Position = UDim2.new(0.5, -110, 0, -50) }, 0.4)
-    end)
-end
-
+-- ============================================================
+-- PAGE QUESTS
+-- ============================================================
 local btnTpEvent = Instance.new("TextButton")
 btnTpEvent.Size = UDim2.new(1, -16, 0, 26)
 btnTpEvent.Position = UDim2.new(0, 8, 0, 164)
@@ -1460,11 +1604,11 @@ btnTpEvent.MouseButton1Click:Connect(function()
 end)
 
 local questDefs = {
-    { id = "doors", text = "AUTO TRICK OR TREAT", posY = 4 },
-    { id = "complete", text = "AUTO COMPLETE QUESTS", posY = 36 },
-    { id = "claim", text = "AUTO CLAIM REWARDS", posY = 68 },
-    { id = "pumpkin", text = "AUTO ROLL PUMPKIN DICE", posY = 100 },
-    { id = "potion", text = "AUTO USE POTIONS", posY = 132 }
+    { id = "doors",    text = "AUTO TRICK OR TREAT",     posY = 4   },
+    { id = "complete", text = "AUTO COMPLETE QUESTS",    posY = 36  },
+    { id = "claim",    text = "AUTO CLAIM REWARDS",      posY = 68  },
+    { id = "pumpkin",  text = "AUTO ROLL PUMPKIN DICE",  posY = 100 },
+    { id = "potion",   text = "AUTO USE POTIONS",        posY = 132 }
 }
 local questButtons = {}
 for _, q in ipairs(questDefs) do
@@ -1482,13 +1626,9 @@ local function SetDoors(state, isManual)
     end
     States.Doors = state
     isAutoTPRunning = state
-    if isManual then
-        Manual.Doors = state
-    end
+    if isManual then Manual.Doors = state end
     updateToggleVisual(questButtons.doors, state, "AUTO TRICK OR TREAT: ON", "AUTO TRICK OR TREAT: OFF")
-    if state then
-        LoopDoors()
-    end
+    if state then LoopDoors() end
 end
 
 local function SetPumpkinRoll(state, isManual)
@@ -1506,52 +1646,51 @@ local function SetPotion(state, isManual)
         task.wait(1)
     end
     States.Potion = state
-    if isManual then
-        Manual.Potion = state
-    end
+    if isManual then Manual.Potion = state end
     updateToggleVisual(questButtons.potion, state, "USE POTIONS: ON", "USE POTIONS: OFF")
 end
 
 local isCompleteEnabled = false
-local isClaimEnabled = false
+local isClaimEnabled    = false
 local pumpkinQuestAtiva = false
 local hauntedNightAtiva = false
 
+local pumpkinLoopRunning = false
 local function LoopPumpkinRoll()
+    if pumpkinLoopRunning then return end
+    pumpkinLoopRunning = true
     task.spawn(function()
-        local ps = ReplicatedStorage:WaitForChild("Network"):WaitForChild("PumpkinDiceService", 5)
-        local rr = ps and ps:WaitForChild("RF", 5):WaitForChild("Roll", 5)
+        local rr = getRemote({"Network", "PumpkinDiceService", "RF", "Roll"}, 2)
         while States.PumpkinRoll do
             if (pumpkinQuestAtiva or hauntedNightAtiva) and rr then
-                pcall(function()
-                    rr:InvokeServer(5)
-                end)
+                pcall(function() rr:InvokeServer(5) end)
             end
             task.wait(0.1)
         end
+        pumpkinLoopRunning = false
     end)
 end
 
+local normalRollLoopRunning = false
 local function LoopNormalRoll()
+    if normalRollLoopRunning then return end
+    normalRollLoopRunning = true
     task.spawn(function()
-        local rs = ReplicatedStorage:WaitForChild("Network"):WaitForChild("RollService", 5)
-        local rf = rs and rs:FindFirstChild("RF", 5)
-        local ev = rf and rf:FindFirstChild("RollDice", 5)
+        local ev = getRemote({"Network", "RollService", "RF", "RollDice"}, 2)
         while States.NormalRoll do
-            if ev then
-                pcall(function()
-                    ev:InvokeServer()
-                end)
-            end
+            if ev then pcall(function() ev:InvokeServer() end) end
             task.wait(0.15)
         end
+        normalRollLoopRunning = false
     end)
 end
 
+local potionLoopRunning = false
 local function LoopPotion()
+    if potionLoopRunning then return end
+    potionLoopRunning = true
     task.spawn(function()
-        local bs = ReplicatedStorage:WaitForChild("Network"):WaitForChild("BoostService", 5)
-        local ur = bs and bs:WaitForChild("RE", 5):WaitForChild("Use", 5)
+        local ur = getRemote({"Network", "BoostService", "RE", "Use"}, 2)
         while States.Potion do
             if ur then
                 pcall(function()
@@ -1563,11 +1702,12 @@ local function LoopPotion()
             end
             task.wait(0.5)
         end
+        potionLoopRunning = false
     end)
 end
 
 local function dispararRemoteClaim(tipo, categoria, nomePasta)
-    local Remote = ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("HalloweenQuestService") and ReplicatedStorage.Network.HalloweenQuestService:FindFirstChild("RE") and ReplicatedStorage.Network.HalloweenQuestService.RE:FindFirstChild("Claim")
+    local Remote = getRemote({"Network", "HalloweenQuestService", "RE", "Claim"}, 2)
     if Remote then
         local catSingular = string.gsub(categoria, "s$", "")
         if catSingular ~= categoria then
@@ -1578,35 +1718,29 @@ local function dispararRemoteClaim(tipo, categoria, nomePasta)
             end)
         else
             setStatus("Claim: " .. nomePasta, GREEN)
-            pcall(function()
-                Remote:FireServer(tipo, categoria)
-            end)
+            pcall(function() Remote:FireServer(tipo, categoria) end)
         end
     end
 end
 
 local TraduzirMissao = {
-    ["DailyDoors"] = { "Daily", "Doors" },
-    ["DailyFloors"] = { "Daily", "Floors" },
-    ["DailyPotion"] = { "Daily", "Potion" },
-    ["DailyRolls"] = { "Daily", "Rolls" },
-    ["HourlyFloors"] = { "Hourly", "Floors" },
-    ["HourlyPotion"] = { "Hourly", "Potion" },
+    ["DailyDoors"]         = { "Daily",  "Doors" },
+    ["DailyFloors"]        = { "Daily",  "Floors" },
+    ["DailyPotion"]        = { "Daily",  "Potion" },
+    ["DailyRolls"]         = { "Daily",  "Rolls" },
+    ["HourlyFloors"]       = { "Hourly", "Floors" },
+    ["HourlyPotion"]       = { "Hourly", "Potion" },
     ["HourlyPumpkinRolls"] = { "Hourly", "PumpkinRolls" },
-    ["HourlyDice"] = { "Hourly", "Dice" },
-    ["DailyDice"] = { "Daily", "Dice" },
-    ["HourlyDoors"] = { "Hourly", "Doors" }
+    ["HourlyDice"]         = { "Hourly", "Dice" },
+    ["DailyDice"]          = { "Daily",  "Dice" },
+    ["HourlyDoors"]        = { "Hourly", "Doors" }
 }
 
 local function AvaliarScrollingFrame(scroll)
-    if not isCompleteEnabled and not isClaimEnabled then
-        return
-    end
+    if not isCompleteEnabled and not isClaimEnabled then return end
     local pD, pP, pN, pPot = false, false, false, false
     if not EstaNoEvento() then
-        if States.Doors then
-            SetDoors(false, false)
-        end
+        if States.Doors then SetDoors(false, false) end
         return
     end
     for _, mf in ipairs(scroll:GetChildren()) do
@@ -1615,11 +1749,13 @@ local function AvaliarScrollingFrame(scroll)
             if bc then
                 local inf = bc:FindFirstChild("Frame") and bc.Frame:FindFirstChild("Info")
                 local txt = inf and inf:FindFirstChild("TextLabel") and inf.TextLabel.Text
-                if isClaimEnabled and bc.GuiState == Enum.GuiState.Idle and txt ~= "Claimed" and not bc:GetAttribute("AutoClaimed") then
+                if isClaimEnabled and bc.GuiState == Enum.GuiState.Idle and txt ~= "Claimed"
+                   and not bc:GetAttribute("AutoClaimed") then
                     bc:SetAttribute("AutoClaimed", true)
-                    local tipo, categoria = string.match(mf.Name, "^(Daily)") or string.match(mf.Name, "^(Hourly)"), string.gsub(mf.Name, "^(Daily)", ""):gsub("^(Hourly)", "")
+                    local tipo      = string.match(mf.Name, "^(Daily)") or string.match(mf.Name, "^(Hourly)")
+                    local categoria = string.gsub(mf.Name, "^(Daily)", ""):gsub("^(Hourly)", "")
                     if TraduzirMissao[mf.Name] then
-                        tipo = TraduzirMissao[mf.Name][1]
+                        tipo      = TraduzirMissao[mf.Name][1]
                         categoria = TraduzirMissao[mf.Name][2]
                     end
                     if tipo and categoria then
@@ -1629,16 +1765,16 @@ local function AvaliarScrollingFrame(scroll)
                 if isCompleteEnabled and bc.GuiState == Enum.GuiState.NonInteractable and txt == "Claim" then
                     local qg = mf:FindFirstChild("QuestGoal")
                     if qg and qg:IsA("TextLabel") and qg.Text ~= "" then
-                        local normalizado = string.lower(qg.Text):gsub("[^%a%s]", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-                        local temPumpkin = string.find(normalizado, "pumpkin") ~= nil
-                        local temDice = string.find(normalizado, "dice") ~= nil or string.find(normalizado, "roll") ~= nil
-                        if string.find(normalizado, "door") then
+                        local norm = string.lower(qg.Text):gsub("[^%a%s]", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+                        local temPumpkin = string.find(norm, "pumpkin") ~= nil
+                        local temDice    = string.find(norm, "dice") ~= nil or string.find(norm, "roll") ~= nil
+                        if string.find(norm, "door") then
                             pD = true
                         elseif temPumpkin and temDice then
                             pP = true
                         elseif temDice then
                             pN = true
-                        elseif string.find(normalizado, "drink") or string.find(normalizado, "potion") then
+                        elseif string.find(norm, "drink") or string.find(norm, "potion") then
                             pPot = true
                         end
                     end
@@ -1672,28 +1808,28 @@ local function startSmartQuest()
     task.spawn(function()
         pcall(function()
             local pGui = LocalPlayer:WaitForChild("PlayerGui", 10)
-            if not pGui then
-                return
-            end
-            local sfq = pGui.Root.Menus.HalloweenQuests:WaitForChild("Quests", 10):WaitForChild("ScrollingFrame", 5)
-            if not sfq then
-                return
-            end
+            if not pGui then return end
+            local root  = pGui:WaitForChild("Root", 10)
+            if not root then return end
+            local menus = root:WaitForChild("Menus", 10)
+            if not menus then return end
+            local hw = menus:WaitForChild("HalloweenQuests", 10)
+            if not hw then return end
+            local quests = hw:WaitForChild("Quests", 10)
+            if not quests then return end
+            local sfq = quests:WaitForChild("ScrollingFrame", 5)
+            if not sfq then return end
             sfq.ChildAdded:Connect(function()
-                task.wait(0.5)
-                AvaliarScrollingFrame(sfq)
+                task.wait(0.5); AvaliarScrollingFrame(sfq)
             end)
             sfq.ChildRemoved:Connect(function()
-                task.wait(0.5)
-                AvaliarScrollingFrame(sfq)
+                task.wait(0.5); AvaliarScrollingFrame(sfq)
             end)
             AvaliarScrollingFrame(sfq)
             task.spawn(function()
                 while isCompleteEnabled or isClaimEnabled do
                     task.wait(1)
-                    if sfq and sfq.Parent then
-                        AvaliarScrollingFrame(sfq)
-                    end
+                    if sfq and sfq.Parent then AvaliarScrollingFrame(sfq) end
                 end
             end)
         end)
@@ -1706,20 +1842,12 @@ end)
 
 questButtons.pumpkin.btn.MouseButton1Click:Connect(function()
     SetPumpkinRoll(not States.PumpkinRoll, true)
-    if States.PumpkinRoll then
-        LoopPumpkinRoll()
-    else
-        setStatus("Pumpkin Dice: OFF", TEXT_DIM)
-    end
+    if States.PumpkinRoll then LoopPumpkinRoll() else setStatus("Pumpkin Dice: OFF", TEXT_DIM) end
 end)
 
 questButtons.potion.btn.MouseButton1Click:Connect(function()
     SetPotion(not States.Potion, true)
-    if States.Potion then
-        LoopPotion()
-    else
-        setStatus("Auto Potion: OFF", TEXT_DIM)
-    end
+    if States.Potion then LoopPotion() else setStatus("Auto Potion: OFF", TEXT_DIM) end
 end)
 
 questButtons.claim.btn.MouseButton1Click:Connect(function()
@@ -1730,9 +1858,7 @@ questButtons.claim.btn.MouseButton1Click:Connect(function()
     end
     isClaimEnabled = not isClaimEnabled
     updateToggleVisual(questButtons.claim, isClaimEnabled, "AUTO CLAIM: ON", "AUTO CLAIM: OFF")
-    if isClaimEnabled then
-        startSmartQuest()
-    end
+    if isClaimEnabled then startSmartQuest() end
 end)
 
 questButtons.complete.btn.MouseButton1Click:Connect(function()
@@ -1746,31 +1872,28 @@ questButtons.complete.btn.MouseButton1Click:Connect(function()
     if isCompleteEnabled then
         startSmartQuest()
     else
-        if States.Doors and not Manual.Doors then
-            SetDoors(false, false)
-        end
-        if States.NormalRoll and not Manual.NormalRoll then
-            States.NormalRoll = false
-        end
-        if States.Potion and not Manual.Potion then
-            SetPotion(false, false)
-        end
+        if States.Doors and not Manual.Doors then SetDoors(false, false) end
+        if States.NormalRoll and not Manual.NormalRoll then States.NormalRoll = false end
+        if States.Potion and not Manual.Potion then SetPotion(false, false) end
         pumpkinQuestAtiva = false
     end
 end)
 
+-- ============================================================
+-- HAUNTED NIGHT
+-- ============================================================
 local buffMonitorConnection = nil
 
 local function checkHauntedPotion()
-    if not workspace:FindFirstChild("Haunted Night") then
-        return
-    end
-    if not States.PumpkinRoll then
-        return
-    end
+    if not workspace:FindFirstChild("Haunted Night") then return end
+    if not States.PumpkinRoll then return end
     pcall(function()
-        local bb = LocalPlayer.PlayerGui.Root.HUD.BuffBar
-        local ur = ReplicatedStorage.Network.BoostService.RE.Use
+        local pg   = LocalPlayer:FindFirstChild("PlayerGui")
+        local root = pg and pg:FindFirstChild("Root")
+        local hud  = root and root:FindFirstChild("HUD")
+        local bb   = hud and hud:FindFirstChild("BuffBar")
+        local ur   = getRemote({"Network", "BoostService", "RE", "Use"}, 2)
+        if not bb or not ur then return end
         if not bb:FindFirstChild("Boost_Haunted Potion") then
             ur:FireServer("Haunted Potion")
             setStatus("Poção Haunted Usada!", ACCENT_GLOW)
@@ -1778,8 +1901,7 @@ local function checkHauntedPotion()
         if not buffMonitorConnection then
             buffMonitorConnection = bb.ChildRemoved:Connect(function(c)
                 if c.Name == "Boost_Haunted Potion" then
-                    task.wait(0.5)
-                    checkHauntedPotion()
+                    task.wait(0.5); checkHauntedPotion()
                 end
             end)
         end
@@ -1800,16 +1922,13 @@ local function ProcessarHauntedNight()
     end
 end
 
-workspace.ChildAdded:Connect(function(c)
-    if c.Name == "Haunted Night" then
-        ProcessarHauntedNight()
-    end
-end)
-
-workspace.ChildRemoved:Connect(function(c)
-    if c.Name == "Haunted Night" then
-        ProcessarHauntedNight()
-    end
+pcall(function()
+    workspace.ChildAdded:Connect(function(c)
+        if c.Name == "Haunted Night" then ProcessarHauntedNight() end
+    end)
+    workspace.ChildRemoved:Connect(function(c)
+        if c.Name == "Haunted Night" then ProcessarHauntedNight() end
+    end)
 end)
 
 task.spawn(function()
@@ -1820,57 +1939,57 @@ end)
 task.spawn(function()
     while true do
         task.wait(1)
-        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if pGui and pGui:FindFirstChild("Root") and pGui.Root:FindFirstChild("Menus") and pGui.Root.Menus:FindFirstChild("HalloweenQuests") then
-            local hw = pGui.Root.Menus.HalloweenQuests
-            local qf = hw:FindFirstChild("Quests")
-            if qf then
-                local sfq = qf:FindFirstChild("ScrollingFrame")
-                if sfq then
-                    local temQuestPumpkin = false
-                    for _, mf in ipairs(sfq:GetChildren()) do
-                        if mf:IsA("Frame") then
-                            local qg = mf:FindFirstChild("QuestGoal")
-                            if qg and qg:IsA("TextLabel") and qg.Text ~= "" then
-                                local t = string.lower(qg.Text):gsub("[^%a%s]", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-                                if string.find(t, "pumpkin") and (string.find(t, "dice") or string.find(t, "roll")) then
-                                    local bc = mf:FindFirstChild("Buttons") and mf.Buttons:FindFirstChild("Claim")
-                                    if bc then
-                                        local inf = bc:FindFirstChild("Frame") and bc.Frame:FindFirstChild("Info")
-                                        local txt = inf and inf:FindFirstChild("TextLabel") and inf.TextLabel.Text
-                                        if txt == "Claim" then
-                                            temQuestPumpkin = true
-                                            break
-                                        end
-                                    end
-                                end
+        pcall(function()
+            local pGui  = LocalPlayer:FindFirstChild("PlayerGui")
+            local root  = pGui and pGui:FindFirstChild("Root")
+            local menus = root and root:FindFirstChild("Menus")
+            local hw    = menus and menus:FindFirstChild("HalloweenQuests")
+            local qf    = hw and hw:FindFirstChild("Quests")
+            local sfq   = qf and qf:FindFirstChild("ScrollingFrame")
+            if not sfq then return end
+            local tem = false
+            for _, mf in ipairs(sfq:GetChildren()) do
+                if mf:IsA("Frame") then
+                    local qg = mf:FindFirstChild("QuestGoal")
+                    if qg and qg:IsA("TextLabel") and qg.Text ~= "" then
+                        local t = string.lower(qg.Text):gsub("[^%a%s]", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+                        if string.find(t, "pumpkin") and (string.find(t, "dice") or string.find(t, "roll")) then
+                            local bc = mf:FindFirstChild("Buttons") and mf.Buttons:FindFirstChild("Claim")
+                            if bc then
+                                local inf = bc:FindFirstChild("Frame") and bc.Frame:FindFirstChild("Info")
+                                local txt = inf and inf:FindFirstChild("TextLabel") and inf.TextLabel.Text
+                                if txt == "Claim" then tem = true; break end
                             end
                         end
                     end
-                    pumpkinQuestAtiva = temQuestPumpkin
                 end
             end
-        end
+            pumpkinQuestAtiva = tem
+        end)
     end
 end)
 
+-- ============================================================
+-- PAGE TOWER
+-- ============================================================
 local rotacaoTowerIndex = 0
 
 local function getListaTowersSelecionadas()
     local l = {}
-    for _, t in ipairs({ "Front Yard", "Foyer", "Crypt", "Attic", "Bell Tower", "The Abyss", "Dragon Tower", "Cursed Tower", "Pirate Tower", "Hidden Leaf Tower", "Slayer Tower", "Shadow Tower" }) do
+    for _, t in ipairs({ "Front Yard", "Foyer", "Crypt", "Attic", "Bell Tower", "The Abyss",
+                         "Dragon Tower", "Cursed Tower", "Pirate Tower", "Hidden Leaf Tower",
+                         "Slayer Tower", "Shadow Tower" }) do
         table.insert(l, t)
     end
     return l
 end
 
-local COL_GAP = 5
-local COL_WIDTH = (WIDTH_EXPANDED - 26 - 5) / 2
-local SCROLL_H = 82
-local SELECT_H = 17
+local COL_GAP    = 5
+local COL_WIDTH  = (WIDTH_EXPANDED - 26 - 5) / 2
+local SCROLL_H   = 82
+local SELECT_H   = 17
 local SCROLL_TOP = 22
 local SELECT_TOP = 109
-local TOGGLE_TOP = 132
 
 local HalloweenSection = Instance.new("Frame")
 HalloweenSection.Size = UDim2.new(0, COL_WIDTH, 0, 320)
@@ -1957,30 +2076,29 @@ local function montarSecaoTower(parent, titulo)
 end
 
 local secHalloween = montarSecaoTower(HalloweenSection, "HALLOWEEN")
-local secNormal = montarSecaoTower(NormalSection, "NORMAL")
-local HalloweenTowers = { { name = "Front Yard" }, { name = "Foyer" }, { name = "Crypt" }, { name = "Attic" }, { name = "Bell Tower" }, { name = "The Abyss" } }
-local NormalTowers = { { name = "Dragon Tower" }, { name = "Cursed Tower" }, { name = "Pirate Tower" }, { name = "Hidden Leaf Tower" }, { name = "Slayer Tower" }, { name = "Shadow Tower" } }
-local SelectedTowers = {}
+local secNormal    = montarSecaoTower(NormalSection,    "NORMAL")
+
+local HalloweenTowers = {
+    { name = "Front Yard" }, { name = "Foyer" }, { name = "Crypt" },
+    { name = "Attic" },      { name = "Bell Tower" }, { name = "The Abyss" }
+}
+local NormalTowers = {
+    { name = "Dragon Tower" }, { name = "Cursed Tower" }, { name = "Pirate Tower" },
+    { name = "Hidden Leaf Tower" }, { name = "Slayer Tower" }, { name = "Shadow Tower" }
+}
+
+local SelectedTowers    = {}
 local SelectedHalloween = {}
-local SelectedNormal = {}
-local HalloweenButtons = {}
-local NormalButtons = {}
+local SelectedNormal    = {}
+local HalloweenButtons  = {}
+local NormalButtons     = {}
 
 local function temHalloweenMarcada()
-    for _, v in pairs(SelectedHalloween) do
-        if v then
-            return true
-        end
-    end
+    for _, v in pairs(SelectedHalloween) do if v then return true end end
     return false
 end
-
 local function temNormalMarcada()
-    for _, v in pairs(SelectedNormal) do
-        if v then
-            return true
-        end
-    end
+    for _, v in pairs(SelectedNormal) do if v then return true end end
     return false
 end
 
@@ -2015,20 +2133,19 @@ local function criarBotaoItem(parent, texto, layoutOrder, onToggle)
         end
     end)
     local data = { btn = b, str = s }
-    b.MouseButton1Click:Connect(function()
-        onToggle(data)
-    end)
+    b.MouseButton1Click:Connect(function() onToggle(data) end)
     return data
 end
 
 local function setItemVisual(data, isOn)
+    if not data or not data.btn then return end
     data.btn:SetAttribute("Active", isOn)
     if isOn then
         tween(data.btn, { TextColor3 = GREEN, BackgroundColor3 = BG_BTN_ON }, 0.15)
-        tween(data.str, { Color = GREEN, Transparency = 0.2 }, 0.15)
+        if data.str then tween(data.str, { Color = GREEN, Transparency = 0.2 }, 0.15) end
     else
         tween(data.btn, { TextColor3 = TEXT_DIM, BackgroundColor3 = BG_BTN }, 0.15)
-        tween(data.str, { Color = STROKE, Transparency = 0.5 }, 0.15)
+        if data.str then tween(data.str, { Color = STROKE, Transparency = 0.5 }, 0.15) end
     end
 end
 
@@ -2036,7 +2153,7 @@ for i, t in ipairs(HalloweenTowers) do
     HalloweenButtons[t.name] = criarBotaoItem(secHalloween.scroll, t.name, i, function(data)
         if SelectedHalloween[t.name] then
             SelectedHalloween[t.name] = nil
-            SelectedTowers[t.name] = nil
+            SelectedTowers[t.name]    = nil
             setItemVisual(data, false)
         else
             if temNormalMarcada() then
@@ -2044,7 +2161,7 @@ for i, t in ipairs(HalloweenTowers) do
                 return
             end
             SelectedHalloween[t.name] = true
-            SelectedTowers[t.name] = true
+            SelectedTowers[t.name]    = true
             setItemVisual(data, true)
         end
     end)
@@ -2075,22 +2192,18 @@ secHalloween.btnSelect.MouseButton1Click:Connect(function()
     end
     for _, t in ipairs(HalloweenTowers) do
         SelectedHalloween[t.name] = true
-        SelectedTowers[t.name] = true
+        SelectedTowers[t.name]    = true
         local d = HalloweenButtons[t.name]
-        if d then
-            setItemVisual(d, true)
-        end
+        if d then setItemVisual(d, true) end
     end
 end)
 
 secHalloween.btnDeselect.MouseButton1Click:Connect(function()
     for _, t in ipairs(HalloweenTowers) do
         SelectedHalloween[t.name] = nil
-        SelectedTowers[t.name] = nil
+        SelectedTowers[t.name]    = nil
         local d = HalloweenButtons[t.name]
-        if d then
-            setItemVisual(d, false)
-        end
+        if d then setItemVisual(d, false) end
     end
 end)
 
@@ -2103,9 +2216,7 @@ secNormal.btnSelect.MouseButton1Click:Connect(function()
         SelectedNormal[t.name] = true
         SelectedTowers[t.name] = true
         local d = NormalButtons[t.name]
-        if d then
-            setItemVisual(d, true)
-        end
+        if d then setItemVisual(d, true) end
     end
 end)
 
@@ -2114,9 +2225,7 @@ secNormal.btnDeselect.MouseButton1Click:Connect(function()
         SelectedNormal[t.name] = nil
         SelectedTowers[t.name] = nil
         local d = NormalButtons[t.name]
-        if d then
-            setItemVisual(d, false)
-        end
+        if d then setItemVisual(d, false) end
     end
 end)
 
@@ -2127,11 +2236,7 @@ autoRotateData.btn.MouseButton1Click:Connect(function()
         isAutoRotateTowerRunning = false
         updateToggleVisual(autoRotateData, false, "AUTO ROTATE TOWER: ON", "AUTO ROTATE TOWER: OFF")
         setStatus("Auto Tower Desligado.", TEXT_DIM)
-        if cancelTowerRF then
-            pcall(function()
-                cancelTowerRF:InvokeServer()
-            end)
-        end
+        if cancelTowerRF then pcall(function() cancelTowerRF:InvokeServer() end) end
         return
     end
     isAutoRotateTowerRunning = true
@@ -2141,8 +2246,7 @@ autoRotateData.btn.MouseButton1Click:Connect(function()
             local l = getListaTowersSelecionadas()
             if #l == 0 then
                 setStatus("Nenhuma Tower selecionada!", RED)
-                task.wait(2)
-                continue
+                task.wait(2); continue
             end
             rotacaoTowerIndex = (rotacaoTowerIndex % #l) + 1
             local ct = l[rotacaoTowerIndex]
@@ -2152,15 +2256,16 @@ autoRotateData.btn.MouseButton1Click:Connect(function()
                 updateToggleVisual(autoRotateData, false, "AUTO ROTATE TOWER: ON", "AUTO ROTATE TOWER: OFF")
                 break
             end
-            local ptr = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Towers"):WaitForChild("RF"):WaitForChild("PlayTower")
+            local ptr = playTowerRF or getRemote({"Network", "Towers", "RF", "PlayTower"}, 2)
+            if not ptr then
+                setStatus("PlayTower não encontrado.", RED)
+                task.wait(2); continue
+            end
             setStatus("Entrando: " .. ct, ACCENT_GLOW)
-            local entrou = false
-            local tentativas = 0
+            local entrou, tentativas = false, 0
             while isAutoRotateTowerRunning and not entrou and tentativas < 10 do
                 tentativas = tentativas + 1
-                pcall(function()
-                    entrou = (ptr:InvokeServer(ct) == true)
-                end)
+                pcall(function() entrou = (ptr:InvokeServer(ct) == true) end)
                 if not entrou then
                     setStatus("Recusado " .. tentativas .. "/10: " .. ct, YELLOW)
                     task.wait(1)
@@ -2168,18 +2273,15 @@ autoRotateData.btn.MouseButton1Click:Connect(function()
             end
             if not entrou then
                 setStatus("Bloqueada: " .. ct, RED)
-                task.wait(2)
-                continue
+                task.wait(2); continue
             end
             task.wait(2)
             setStatus("Lutando: " .. ct, YELLOW)
             torreFinalizada = false
-            ultimoFloor = 0
-            achouAndar = false
+            ultimoFloor     = 0
+            achouAndar      = false
             while isAutoRotateTowerRunning and not torreFinalizada do
-                pcall(function()
-                    completeTowerRF:InvokeServer()
-                end)
+                pcall(function() completeTowerRF:InvokeServer() end)
                 if achouAndar then
                     achouAndar = false
                     setStatus("Floor " .. ultimoFloor, GREEN)
@@ -2188,15 +2290,16 @@ autoRotateData.btn.MouseButton1Click:Connect(function()
             end
             if isAutoRotateTowerRunning then
                 setStatus("Torre finalizada...", YELLOW)
-                pcall(function()
-                    cancelTowerRF:InvokeServer()
-                end)
+                pcall(function() cancelTowerRF:InvokeServer() end)
                 task.wait(1)
             end
         end
     end)
 end)
 
+-- ============================================================
+-- PAGE EQUIP
+-- ============================================================
 local QUIRKS = { "Fortune's Favor", "Midas Touch", "Prodigy" }
 
 local LockSection = Instance.new("Frame")
@@ -2248,15 +2351,16 @@ local function montarSecao(parent, titulo)
     return s
 end
 
-local lockScroll = montarSecao(LockSection, "LOCK")
+local lockScroll  = montarSecao(LockSection,  "LOCK")
 local equipScroll = montarSecao(EquipSection, "EQUIP")
+
 local SelectedLocks = {}
 local SelectedEquip = nil
-local LockButtons = {}
-local EquipButtons = {}
+local LockButtons   = {}
+local EquipButtons  = {}
 
 for i, q in ipairs(QUIRKS) do
-    local data = criarBotaoItem(lockScroll, q, i, function(d)
+    LockButtons[q] = criarBotaoItem(lockScroll, q, i, function(d)
         if SelectedLocks[q] then
             SelectedLocks[q] = nil
             setItemVisual(d, false)
@@ -2265,9 +2369,8 @@ for i, q in ipairs(QUIRKS) do
             setItemVisual(d, true)
         end
     end)
-    LockButtons[q] = data
 
-    local data2 = criarBotaoItem(equipScroll, q, i, function(d)
+    EquipButtons[q] = criarBotaoItem(equipScroll, q, i, function(d)
         if SelectedEquip == q then
             SelectedEquip = nil
             setItemVisual(d, false)
@@ -2278,7 +2381,6 @@ for i, q in ipairs(QUIRKS) do
             end
         end
     end)
-    EquipButtons[q] = data2
 end
 
 local btnLock = Instance.new("TextButton")
@@ -2311,18 +2413,10 @@ btnUnlockAll.Parent = LockSection
 makeCorner(btnUnlockAll, 7)
 makeStroke(btnUnlockAll, STROKE, 1, 0.45)
 
-btnLock.MouseEnter:Connect(function()
-    tween(btnLock, { BackgroundColor3 = BG_BTN_HOVER }, 0.15)
-end)
-btnLock.MouseLeave:Connect(function()
-    tween(btnLock, { BackgroundColor3 = BG_BTN }, 0.15)
-end)
-btnUnlockAll.MouseEnter:Connect(function()
-    tween(btnUnlockAll, { BackgroundColor3 = BG_BTN_HOVER }, 0.15)
-end)
-btnUnlockAll.MouseLeave:Connect(function()
-    tween(btnUnlockAll, { BackgroundColor3 = BG_BTN }, 0.15)
-end)
+btnLock.MouseEnter:Connect(function() tween(btnLock, { BackgroundColor3 = BG_BTN_HOVER }, 0.15) end)
+btnLock.MouseLeave:Connect(function() tween(btnLock, { BackgroundColor3 = BG_BTN }, 0.15) end)
+btnUnlockAll.MouseEnter:Connect(function() tween(btnUnlockAll, { BackgroundColor3 = BG_BTN_HOVER }, 0.15) end)
+btnUnlockAll.MouseLeave:Connect(function() tween(btnUnlockAll, { BackgroundColor3 = BG_BTN }, 0.15) end)
 
 local autoEquipData = makeToggleButton(EquipSection, "AUTO EQUIP: OFF", SCROLL_TOP + SCROLL_H + 6, 22)
 autoEquipData.btn.Size = UDim2.new(1, -8, 0, 22)
@@ -2331,33 +2425,36 @@ autoEquipData.btn.Position = UDim2.new(0, 4, 0, SCROLL_TOP + SCROLL_H + 6)
 local function IniciarAutoEquip(quirkEscolhida)
     local maxSlots = GetMaxSlots()
     if not MatrizSalva then
-        setStatus("Matriz vazia!", RED)
+        setStatus("Matriz vazia!", RED); return
+    end
+    local EquipEvent        = getRemote({"Network", "UnitService", "RF", "Equip"}, 2)
+    local InteractSlotEvent = getRemote({"Network", "PlotService", "RE", "InteractSlot"}, 2)
+    if not EquipEvent or not InteractSlotEvent then
+        setStatus("Remotes de equip faltando!", RED)
+        isEquipRunning = false
+        updateToggleVisual(autoEquipData, false, "AUTO EQUIP: ON", "AUTO EQUIP: OFF")
         return
     end
     local uuidsUsados = {}
-    local slotAtual = 1
-    local EquipEvent = ReplicatedStorage.Network.UnitService.RF.Equip
-    local InteractSlotEvent = ReplicatedStorage.Network.PlotService.RE.InteractSlot
-    
+    local slotAtual   = 1
+
     while slotAtual <= maxSlots and isEquipRunning do
         local minhaPlot = AcharMinhaPlot()
         if not minhaPlot then
             setStatus("Plot não encontrada...", RED)
-            task.wait(1)
-            continue
+            task.wait(1); continue
         end
         setStatus("Procurando p/ Slot " .. slotAtual, ACCENT_GLOW)
         local bonecoEncontrado = nil
         local targetLower = quirkEscolhida:lower()
-        
+
         for chave, dados in pairs(MatrizSalva) do
             if type(dados) == "table" then
                 local ehUnit = false
                 pcall(function()
                     for k, v in pairs(dados) do
                         if tostring(k):lower() == "kind" and tostring(v) == "Unit" then
-                            ehUnit = true
-                            return
+                            ehUnit = true; return
                         end
                     end
                 end)
@@ -2369,42 +2466,35 @@ local function IniciarAutoEquip(quirkEscolhida)
                         if not uuidsUsados[uuid] then
                             local q = LerQuirkDoBoneco(dados)
                             if q and q:lower() == targetLower then
-                                bonecoEncontrado = { uuid = uuid, nome = nome }
+                                bonecoEncontrado = { uuid = uuid, nome = tostring(nome) }
                                 break
                             end
                         end
                     end
                 end
-            end        end
-        
+            end
+        end
+
         if not bonecoEncontrado then
             setStatus("Aguardando bonecos...", ACCENT_GLOW)
             task.wait(0.5)
         else
-            local colocou = false
-            local tentativas = 0
+            local colocou, tentativas = false, 0
             while tentativas < 10 and isEquipRunning do
                 tentativas = tentativas + 1
                 setStatus(bonecoEncontrado.nome .. " -> Slot " .. slotAtual .. " (" .. tentativas .. ")", ACCENT_GLOW)
-                pcall(function()
-                    EquipEvent:InvokeServer(bonecoEncontrado.uuid)
-                end)
+                pcall(function() EquipEvent:InvokeServer(bonecoEncontrado.uuid) end)
                 task.wait(0.2)
-                pcall(function()
-                    InteractSlotEvent:FireServer(slotAtual)
-                end)
+                pcall(function() InteractSlotEvent:FireServer(slotAtual) end)
                 local esperou = 0
                 while esperou < 8 do
                     esperou = esperou + 1
                     task.wait(0.15)
                     if UUIDNoSlot(minhaPlot, slotAtual, bonecoEncontrado.uuid) then
-                        colocou = true
-                        break
+                        colocou = true; break
                     end
                 end
-                if colocou then
-                    break
-                end
+                if colocou then break end
                 task.wait(0.2)
             end
             if colocou then
@@ -2431,8 +2521,9 @@ autoEquipData.btn.MouseButton1Click:Connect(function()
         local minhaPlot = AcharMinhaPlot()
         if minhaPlot then
             local decor = minhaPlot:FindFirstChild("Decorations")
-            if decor and decor:GetChildren()[6] then
-                local child = decor:GetChildren()[6]:GetChildren()[2]
+            if decor then
+                local c6 = decor:GetChildren()[6]
+                local child = c6 and c6:GetChildren()[2]
                 if child and child:IsA("BasePart") then
                     local char = LocalPlayer.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -2457,27 +2548,25 @@ autoEquipData.btn.MouseButton1Click:Connect(function()
     end
     isEquipRunning = true
     updateToggleVisual(autoEquipData, true, "AUTO EQUIP: ON", "AUTO EQUIP: OFF")
-    task.spawn(function()
-        IniciarAutoEquip(SelectedEquip)
-    end)
+    task.spawn(function() IniciarAutoEquip(SelectedEquip) end)
 end)
 
 btnLock.MouseButton1Click:Connect(function()
     if not MatrizSalva then
-        mostrarNotificacao("Matriz vazia!", RED)
-        return
+        mostrarNotificacao("Matriz vazia!", RED); return
     end
-    local LockEvent = ReplicatedStorage.Network.UnitService.RE.SetLocked
+    local LockEvent = getRemote({"Network", "UnitService", "RE", "SetLocked"}, 2)
+    if not LockEvent then
+        setStatus("SetLocked não encontrado.", RED); return
+    end
     local uuids = {}
-    
     for chave, dados in pairs(MatrizSalva) do
         if type(dados) == "table" then
             local ehUnit = false
             pcall(function()
                 for k, v in pairs(dados) do
                     if tostring(k):lower() == "kind" and tostring(v) == "Unit" then
-                        ehUnit = true
-                        return
+                        ehUnit = true; return
                     end
                 end
             end)
@@ -2492,16 +2581,11 @@ btnLock.MouseButton1Click:Connect(function()
             end
         end
     end
-    
     local count = 0
-    for _ in pairs(uuids) do
-        count = count + 1
-    end
+    for _ in pairs(uuids) do count = count + 1 end
     if count > 0 then
         setStatus("Lock em " .. count .. " bonecos...", ACCENT_GLOW)
-        pcall(function()
-            LockEvent:FireServer(uuids)
-        end)
+        pcall(function() LockEvent:FireServer(uuids) end)
         task.wait(0.5)
         setStatus("Lock OK!", GREEN)
     else
@@ -2511,20 +2595,20 @@ end)
 
 btnUnlockAll.MouseButton1Click:Connect(function()
     if not MatrizSalva then
-        mostrarNotificacao("Matriz vazia!", RED)
-        return
+        mostrarNotificacao("Matriz vazia!", RED); return
     end
-    local LockEvent = ReplicatedStorage.Network.UnitService.RE.SetLocked
+    local LockEvent = getRemote({"Network", "UnitService", "RE", "SetLocked"}, 2)
+    if not LockEvent then
+        setStatus("SetLocked não encontrado.", RED); return
+    end
     local uuids = {}
-    
     for chave, dados in pairs(MatrizSalva) do
         if type(dados) == "table" then
             local ehUnit = false
             pcall(function()
                 for k, v in pairs(dados) do
                     if tostring(k):lower() == "kind" and tostring(v) == "Unit" then
-                        ehUnit = true
-                        return
+                        ehUnit = true; return
                     end
                 end
             end)
@@ -2536,16 +2620,11 @@ btnUnlockAll.MouseButton1Click:Connect(function()
             end
         end
     end
-    
     local count = 0
-    for _ in pairs(uuids) do
-        count = count + 1
-    end
+    for _ in pairs(uuids) do count = count + 1 end
     if count > 0 then
         setStatus("Unlock em " .. count .. " bonecos...", ACCENT_GLOW)
-        pcall(function()
-            LockEvent:FireServer(uuids)
-        end)
+        pcall(function() LockEvent:FireServer(uuids) end)
         task.wait(0.5)
         setStatus("Unlock OK!", GREEN)
     else
@@ -2553,13 +2632,15 @@ btnUnlockAll.MouseButton1Click:Connect(function()
     end
 end)
 
-local GradeRollEvent = ReplicatedStorage.Network.GradeService.RE.Roll
-local TraitRollEvent = ReplicatedStorage.Network.TraitService.RE.Roll
+-- ============================================================
+-- PAGE ROLL
+-- ============================================================
 local GRADES = { "Infinity", "Omega", "Z", "Chinês", "Z+" }
 local TRAITS = { "Genesis", "Eternal", "Transcendent", "Paradox" }
-local gradeSelected = {}
-local traitSelected = {}
-local selectedBonecos = {}
+
+local gradeSelected      = {}
+local traitSelected      = {}
+local selectedBonecos    = {}
 local isAutoGradeRunning = false
 local isAutoTraitRunning = false
 local TabelaSymbols = { ["Infinity"] = "∞", ["Omega"] = "Ω", ["Z"] = "Z", ["Chinês"] = "神", ["Z+"] = "Z+" }
@@ -2746,25 +2827,22 @@ local ListaItens = {}
 
 local function AtualizarLista()
     for _, v in ipairs(ListaItens) do
-        v.frame:Destroy()
+        pcall(function() v.frame:Destroy() end)
     end
-    table.clear(ListaItens)
-    if not MatrizSalva then
-        return
-    end
-    local filtro = SearchBox.Text:lower()
+    ListaItens = {}
+    if not MatrizSalva then return end
+    local filtro = (SearchBox.Text or ""):lower()
     for chave, dados in pairs(MatrizSalva) do
         if type(dados) == "table" then
             local ehUnit = false
             for k, v in pairs(dados) do
                 if tostring(k):lower() == "kind" and tostring(v) == "Unit" then
-                    ehUnit = true
-                    break
+                    ehUnit = true; break
                 end
             end
             if ehUnit then
                 local uuid = dados.key or dados.Key or (type(chave) == "string" and chave) or dados.Id
-                local nome = dados.name or dados.Name or "?"
+                local nome = tostring(dados.name or dados.Name or "?")
                 if uuid and (filtro == "" or nome:lower():find(filtro, 1, true)) then
                     local itemFrame = Instance.new("Frame")
                     itemFrame.Size = UDim2.new(1, -2, 0, 32)
@@ -2772,13 +2850,13 @@ local function AtualizarLista()
                     itemFrame.Parent = ScrollLista
                     makeCorner(itemFrame, 6)
                     local is = makeStroke(itemFrame, STROKE, 1, 0.5)
-                    
+
                     local btnCheck = Instance.new("TextButton")
                     btnCheck.Size = UDim2.new(1, 0, 1, 0)
                     btnCheck.BackgroundTransparency = 1
                     btnCheck.Text = ""
                     btnCheck.Parent = itemFrame
-                    
+
                     local txtNome = Instance.new("TextLabel")
                     txtNome.Size = UDim2.new(1, -10, 0, 13)
                     txtNome.Position = UDim2.new(0, 6, 0, 3)
@@ -2789,7 +2867,7 @@ local function AtualizarLista()
                     txtNome.Font = Enum.Font.GothamBold
                     txtNome.TextXAlignment = Enum.TextXAlignment.Left
                     txtNome.Parent = itemFrame
-                    
+
                     local txtInfo = Instance.new("TextLabel")
                     txtInfo.Size = UDim2.new(1, -10, 0, 11)
                     txtInfo.Position = UDim2.new(0, 6, 0, 17)
@@ -2799,7 +2877,7 @@ local function AtualizarLista()
                     txtInfo.Font = Enum.Font.Gotham
                     txtInfo.TextXAlignment = Enum.TextXAlignment.Left
                     txtInfo.Parent = itemFrame
-                    
+
                     local function updateVisual()
                         local gAtual, tAtual = "?", "Sem Trait"
                         local att = dados.attributes or dados.Attributes
@@ -2807,7 +2885,7 @@ local function AtualizarLista()
                             gAtual = att.grade or "?"
                             tAtual = att.trait or "Sem Trait"
                         end
-                        txtInfo.Text = "Grade: " .. gAtual .. "  |  Trait: " .. tAtual
+                        txtInfo.Text = "Grade: " .. tostring(gAtual) .. "  |  Trait: " .. tostring(tAtual)
                         if selectedBonecos[uuid] then
                             itemFrame.BackgroundColor3 = BG_BTN_ON
                             is.Color = GREEN
@@ -2822,12 +2900,12 @@ local function AtualizarLista()
                             txtNome.TextColor3 = TEXT_BRIGHT
                         end
                     end
-                    
+
                     btnCheck.MouseButton1Click:Connect(function()
                         selectedBonecos[uuid] = not selectedBonecos[uuid]
                         updateVisual()
                     end)
-                    
+
                     table.insert(ListaItens, { frame = itemFrame, uuid = uuid, dados = dados, atualizar = updateVisual })
                     updateVisual()
                 end
@@ -2838,37 +2916,21 @@ end
 
 SearchBox:GetPropertyChangedSignal("Text"):Connect(AtualizarLista)
 
-local oldNamecall2
-oldNamecall2 = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    if method == "FireServer" and (self == GradeRollEvent or self == TraitRollEvent) then
-        local args = { ... }
-        local uuidRollado = args[1]
-        task.delay(0.05, function()
-            for _, item in ipairs(ListaItens) do
-                if item.uuid == uuidRollado then
-                    item.atualizar()
-                    break
-                end
-            end
-        end)
+_G.__refreshListaRoll = function(uuidRollado)
+    for _, item in ipairs(ListaItens) do
+        if item.uuid == uuidRollado then
+            item.atualizar(); break
+        end
     end
-    return oldNamecall2(self, ...)
-end)
+end
 
 local function CheckGradeMatch(g)
-    if not g or g == "" then
-        return false
-    end
+    if not g or g == "" then return false end
     for k, sel in pairs(gradeSelected) do
         if sel then
             local simboloAlvo = TabelaSymbols[k] or k
-            if g == simboloAlvo or string.find(g, simboloAlvo, 1, true) then
-                return true
-            end
-            if string.find(g, k, 1, true) then
-                return true
-            end
+            if g == simboloAlvo or string.find(g, simboloAlvo, 1, true) then return true end
+            if string.find(g, k, 1, true) then return true end
         end
     end
     return false
@@ -2876,9 +2938,7 @@ end
 
 local function CheckTraitMatch(t)
     for k, sel in pairs(traitSelected) do
-        if sel and t:lower():find(k:lower(), 1, true) then
-            return true
-        end
+        if sel and t:lower():find(k:lower(), 1, true) then return true end
     end
     return false
 end
@@ -2896,14 +2956,13 @@ gradeRunData.btn.MouseButton1Click:Connect(function()
     if isAutoGradeRunning then
         task.spawn(function()
             while isAutoGradeRunning do
-                if MatrizSalva then
+                if MatrizSalva and GradeRollEvent then
                     for uuid, sel in pairs(selectedBonecos) do
                         if sel then
                             local dados = nil
                             for _, d in pairs(MatrizSalva) do
                                 if type(d) == "table" and (d.key == uuid or d.Id == uuid) then
-                                    dados = d
-                                    break
+                                    dados = d; break
                                 end
                             end
                             if dados then
@@ -2911,9 +2970,7 @@ gradeRunData.btn.MouseButton1Click:Connect(function()
                                 if not CheckGradeMatch(gradeAtual) then
                                     task.spawn(function()
                                         while isAutoGradeRunning and not CheckGradeMatch((dados.attributes or dados.Attributes or {}).grade or "") do
-                                            pcall(function()
-                                                GradeRollEvent:FireServer(uuid)
-                                            end)
+                                            pcall(function() GradeRollEvent:FireServer(uuid) end)
                                             task.wait(0.01)
                                         end
                                     end)
@@ -2941,14 +2998,13 @@ traitRunData.btn.MouseButton1Click:Connect(function()
     if isAutoTraitRunning then
         task.spawn(function()
             while isAutoTraitRunning do
-                if MatrizSalva then
+                if MatrizSalva and TraitRollEvent then
                     for uuid, sel in pairs(selectedBonecos) do
                         if sel then
                             local dados = nil
                             for _, d in pairs(MatrizSalva) do
                                 if type(d) == "table" and (d.key == uuid or d.Id == uuid) then
-                                    dados = d
-                                    break
+                                    dados = d; break
                                 end
                             end
                             if dados then
@@ -2956,9 +3012,7 @@ traitRunData.btn.MouseButton1Click:Connect(function()
                                 if not CheckTraitMatch(traitAtual) then
                                     task.spawn(function()
                                         while isAutoTraitRunning and not CheckTraitMatch((dados.attributes or dados.Attributes or {}).trait or "Sem Trait") do
-                                            pcall(function()
-                                                TraitRollEvent:FireServer(uuid)
-                                            end)
+                                            pcall(function() TraitRollEvent:FireServer(uuid) end)
                                             task.wait(0.01)
                                         end
                                     end)
@@ -2973,6 +3027,9 @@ traitRunData.btn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- ============================================================
+-- MINIMIZE
+-- ============================================================
 minimizeBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
@@ -2985,8 +3042,6 @@ minimizeBtn.MouseButton1Click:Connect(function()
         sf.Visible = false
         discordContainer.Visible = false
         animateSize(WIDTH_NORMAL, 32)
-        mainFrame.Size = UDim2.new(0, WIDTH_NORMAL, 0, 32)
-        bgImage.Size = mainFrame.Size
     else
         minimizeBtn.Text = "—"
         tabContainer.Visible = true
@@ -2996,6 +3051,9 @@ minimizeBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- ============================================================
+-- INICIALIZAÇÃO
+-- ============================================================
 task.spawn(function()
     setStatus("Buscando Matriz Inicial...", ACCENT_GLOW)
     local t = 0
@@ -3015,12 +3073,13 @@ task.spawn(function()
             task.wait(restante)
         end
     end
-    if MatrizSalva then
-        AtualizarLista()
-    end
+    if MatrizSalva then AtualizarLista() end
     setStatus("Pronto.", GREEN)
 end)
 
+-- ============================================================
+-- INTRO
+-- ============================================================
 task.spawn(function()
     local introGui = Instance.new("ScreenGui")
     introGui.Name = "HalloweenIntro"
@@ -3028,7 +3087,7 @@ task.spawn(function()
     introGui.IgnoreGuiInset = true
     introGui.DisplayOrder = 99999
     introGui.Parent = coreGui
-    
+
     local bg
     if Theme.IntroBg then
         bg = Instance.new("ImageLabel")
@@ -3047,14 +3106,14 @@ task.spawn(function()
         bg.ZIndex = 1
         bg.Parent = introGui
     end
-    
+
     local mainContainer = Instance.new("Frame")
     mainContainer.Size = UDim2.new(0, 400, 0, 300)
     mainContainer.Position = UDim2.new(0.5, -200, 0.5, -150)
     mainContainer.BackgroundTransparency = 1
     mainContainer.ZIndex = 10
     mainContainer.Parent = introGui
-    
+
     local avatarFrame = Instance.new("Frame")
     avatarFrame.Size = UDim2.new(0, 100, 0, 100)
     avatarFrame.Position = UDim2.new(0.5, -50, 0, 0)
@@ -3064,7 +3123,7 @@ task.spawn(function()
     avatarFrame.ZIndex = 11
     avatarFrame.Parent = mainContainer
     makeCorner(avatarFrame, 50)
-    
+
     local avatarImg = Instance.new("ImageLabel")
     avatarImg.Size = UDim2.new(1, 0, 1, 0)
     avatarImg.BackgroundTransparency = 1
@@ -3072,7 +3131,7 @@ task.spawn(function()
     avatarImg.ZIndex = 12
     avatarImg.Parent = avatarFrame
     makeCorner(avatarImg, 50)
-    
+
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Size = UDim2.new(1, 0, 0, 100)
     nameLabel.Position = UDim2.new(0, 0, 0, 110)
@@ -3082,7 +3141,7 @@ task.spawn(function()
     nameLabel.TextSize = 65
     nameLabel.ZIndex = 11
     nameLabel.Parent = mainContainer
-    
+
     if UserId == 2638574247 then
         nameLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
         local nameStroke = Instance.new("UIStroke", nameLabel)
@@ -3102,7 +3161,7 @@ task.spawn(function()
         nameStroke.Thickness = 4
         nameStroke.Transparency = 0.2
     end
-    
+
     local subtitleLabel = Instance.new("TextLabel")
     subtitleLabel.Size = UDim2.new(1, 0, 0, 30)
     subtitleLabel.Position = UDim2.new(0, 0, 0, 190)
@@ -3112,7 +3171,7 @@ task.spawn(function()
     subtitleLabel.TextSize = 24
     subtitleLabel.ZIndex = 11
     subtitleLabel.Parent = mainContainer
-    
+
     local subtitleStroke = Instance.new("UIStroke", subtitleLabel)
     subtitleStroke.Color = Color3.fromRGB(0, 0, 0)
     subtitleStroke.Thickness = 2
@@ -3123,7 +3182,7 @@ task.spawn(function()
     else
         subtitleLabel.Font = Enum.Font.GothamBlack
     end
-    
+
     local divider = Instance.new("Frame")
     divider.Size = UDim2.new(0, 0, 0, 2)
     divider.Position = UDim2.new(0.5, 0, 0, 225)
@@ -3131,47 +3190,59 @@ task.spawn(function()
     divider.BorderSizePixel = 0
     divider.ZIndex = 11
     divider.Parent = mainContainer
-    
+
     task.wait(0.3)
-    
+
     local fadeIn = TweenInfo.new(0.8, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
     TweenService:Create(avatarFrame, fadeIn, { Size = UDim2.new(0, 120, 0, 120), Position = UDim2.new(0.5, -60, 0, -10) }):Play()
     TweenService:Create(divider, fadeIn, { Size = UDim2.new(0.8, 0, 0, 2) }):Play()
-    
-    local nomeCompleto = Theme.Name
-    local nomeMostrado = ""
-    
+
+    local nomeCompleto = Theme.Name or ""
+    local nomeMostrado  = ""
+
     task.wait(0.4)
-    
-    for i = 1, utf8.len(nomeCompleto) do
-        local char = utf8.offset(nomeCompleto, i)
-        local prox = i == utf8.len(nomeCompleto) and #nomeCompleto + 1 or utf8.offset(nomeCompleto, i + 1)
-        nomeMostrado = nomeMostrado .. string.sub(nomeCompleto, char, prox - 1)
-        nameLabel.Text = nomeMostrado
-        task.wait(0.1)
+
+    -- fallback para utf8.codes inexistente
+    local okCodes = pcall(function()
+        for _, code in utf8.codes(nomeCompleto) do
+            nomeMostrado = nomeMostrado .. utf8.char(code)
+            nameLabel.Text = nomeMostrado
+            task.wait(0.1)
+        end
+    end)
+    if not okCodes then
+        for i = 1, #nomeCompleto do
+            nomeMostrado = nomeMostrado .. string.sub(nomeCompleto, i, i)
+            nameLabel.Text = nomeMostrado
+            task.wait(0.1)
+        end
     end
-    
+
     task.wait(2.5)
-    
+
     local fadeOut = TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
     if bg:IsA("ImageLabel") then
         TweenService:Create(bg, fadeOut, { ImageTransparency = 1 }):Play()
     else
         TweenService:Create(bg, fadeOut, { BackgroundTransparency = 1 }):Play()
     end
-    
+
     TweenService:Create(avatarFrame, fadeOut, { BackgroundTransparency = 1, Position = UDim2.new(0.5, -50, 0, 10) }):Play()
     TweenService:Create(avatarImg, fadeOut, { ImageTransparency = 1 }):Play()
     TweenService:Create(nameLabel, fadeOut, { TextTransparency = 1, Position = UDim2.new(0, 0, 0, 130) }):Play()
     TweenService:Create(subtitleLabel, fadeOut, { TextTransparency = 1, Position = UDim2.new(0, 0, 0, 210) }):Play()
-    
-    if nameLabel:FindFirstChild("UIStroke") then TweenService:Create(nameLabel.UIStroke, fadeOut, { Transparency = 1 }):Play() end
+    if nameLabel:FindFirstChild("UIStroke") then
+        TweenService:Create(nameLabel.UIStroke, fadeOut, { Transparency = 1 }):Play()
+    end
     TweenService:Create(subtitleStroke, fadeOut, { Transparency = 1 }):Play()
     TweenService:Create(divider, fadeOut, { BackgroundTransparency = 1 }):Play()
-    
+
     task.wait(0.7)
-    
-    if introGui then
-        introGui:Destroy()
-    end
+    if introGui then introGui:Destroy() end
 end)
+
+end, crash)
+
+if not SCRIPT_OK then
+    crash(SCRIPT_ERR)
+end
